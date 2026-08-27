@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkAgent — WorkWeek HCM Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">WW</div>
+        <div class="brand-info">
+          <h2>WorkAgent</h2>
+          <span class="badge badge-primary">WorkWeek HCM</span>
+        </div>
+      </div>
+
+      <div class="section-title">ACTIVE PERSONA</div>
+      <div class="persona-selector">
+        <label for="personaSelect">Employee Context:</label>
+        <select id="personaSelect">
+          <option value="EMP-001" selected>Sarah Chen (VP People Ops - AU)</option>
+          <option value="EMP-002">Alex Rivera (IT Director - UK)</option>
+          <option value="EMP-003">Jordan Lee (Senior PM - US)</option>
+        </select>
+      </div>
+
+      <div class="employee-card" id="employeeCard">
+        <div class="emp-avatar" id="empAvatar">SC</div>
+        <div class="emp-details">
+          <div class="emp-name" id="empName">Sarah Chen</div>
+          <div class="emp-title" id="empTitle">VP People Operations</div>
+          <div class="emp-id" id="empIdBadge">EMP-001 &bull; Sydney, AU</div>
+        </div>
+      </div>
+
+      <div class="section-title">QUICK ACTIONS</div>
+      <div class="quick-actions">
+        <button class="action-btn" onclick="sendQuickPrompt('What are my current leave balances in WorkWeek?')">
+          <span>📊</span> Check Leave Balances
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('Show me my complete employee profile and contact information.')">
+          <span>👤</span> View My Profile
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('I would like to book 3 days of sick leave starting 2026-09-01 to 2026-09-03 for medical recovery.')">
+          <span>🩺</span> Request Sick Leave
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('I need to take 5 days of vacation leave from 2026-10-12 to 2026-10-16 for family holiday.')">
+          <span>✈️</span> Request Vacation Leave
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('Please check the status of my previous leave requests.')">
+          <span>📜</span> View Leave History
+        </button>
+      </div>
+
+      <div class="service-status">
+        <div class="status-indicator online"></div>
+        <div class="status-text">
+          <div class="status-title">WorkWeek SaaS Service</div>
+          <div class="status-sub" id="serviceStatusLabel">MCP Connected / Verified</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="chat-workspace">
+      <!-- Header -->
+      <header class="chat-header">
+        <div class="header-left">
+          <h1>WorkWeek HCM Assistant</h1>
+          <p class="subtitle">Grounding System-of-Record Facts &amp; Confirm-Before-Commit Actions</p>
+        </div>
+        <div class="header-right">
+          <span class="security-chip">
+            <span class="icon">🔒</span> Zero-Trust Identity Injected
+          </span>
+          <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
+        </div>
+      </header>
+
+      <!-- Message Stream -->
+      <div class="chat-stream" id="chatStream">
+        <div class="message-row system">
+          <div class="system-bubble">
+            ✨ <strong>WorkAgent</strong> initialized. Connected to <strong>WorkWeek HCM</strong>. Ask any question regarding your employee profile, balances, or submit leave requests safely with confirm-before-commit verification.
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Composer -->
+      <footer class="chat-composer-area">
+        <form class="composer-form" id="chatForm" onsubmit="handleFormSubmit(event)">
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="Ask WorkAgent about leave balances, profiles, or request time off..."
+            onkeydown="handleKeyDown(event)"
+          ></textarea>
+          <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
+            <span>Send</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </form>
+        <div class="composer-footnote">
+          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini</strong> &bull; WorkWeek MCP SaaS Gateway
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
