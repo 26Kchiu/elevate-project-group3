@@ -1,0 +1,1 @@
+"""ServiceImmediately MCP server module."""

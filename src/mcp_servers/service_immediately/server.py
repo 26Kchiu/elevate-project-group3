@@ -1,0 +1,1 @@
+"""ServiceImmediately MCP Server implementation."""
