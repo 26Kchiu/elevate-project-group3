@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elevate Multi-Agent Portal — HCM &amp; ITSM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">EL</div>
+        <div class="brand-info">
+          <h2>Elevate Multi-Agent</h2>
+          <span class="badge badge-primary">HCM &bull; ITSM Hub</span>
+        </div>
+      </div>
+
+      <!-- Agent Target Selector -->
+      <div class="section-title">ACTIVE AGENT TARGET</div>
+      <div class="agent-mode-selector">
+        <button class="mode-btn active" id="btnModeAuto" onclick="setAgentMode('auto')">
+          <span>🤖</span> Auto-Route
+        </button>
+        <button class="mode-btn" id="btnModeHcm" onclick="setAgentMode('workweek')">
+          <span>💼</span> WorkWeek HCM
+        </button>
+        <button class="mode-btn" id="btnModeItsm" onclick="setAgentMode('service_immediately')">
+          <span>🎫</span> ServiceImmediately
+        </button>
+      </div>
+
+      <!-- PAT Token Configuration -->
+      <div class="section-title">MCP CREDENTIAL TOKEN</div>
+      <div class="token-config-box">
+        <label for="mcpTokenInput">PAT Token:</label>
+        <div class="token-input-wrapper">
+          <input
+            type="password"
+            id="mcpTokenInput"
+            value="mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+            placeholder="mcp__..."
+          />
+          <button type="button" class="btn-toggle-token" onclick="toggleTokenVisibility()">👁️</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 6px;" onclick="syncAllServices()">
+          🔄 Sync Identity &amp; SaaS Data
+        </button>
+      </div>
+
+      <!-- Authenticated Identity Card -->
+      <div class="section-title">AUTHENTICATED IDENTITY</div>
+      <div class="employee-card" id="userCard">
+        <div class="emp-avatar" id="userAvatar">HL</div>
+        <div class="emp-details">
+          <div class="emp-name" id="userName">Harry Lin</div>
+          <div class="emp-title" id="userRole">harrylin@google.com</div>
+          <div class="emp-id" id="userIdBadge">ID: EMP-545</div>
+        </div>
+      </div>
+
+      <!-- WorkWeek HCM Summary -->
+      <div class="section-title">WORKWEEK HCM (LEAVES)</div>
+      <div class="balances-grid" id="balancesGrid">
+        <div class="balance-card">
+          <div class="balance-header">
+            <span>✈️ Vacation</span>
+            <span class="balance-badge" id="vacationRemaining">15.0 days</span>
+          </div>
+          <div class="balance-sub" id="vacationUsed">5.0 / 20.0 used</div>
+        </div>
+        <div class="balance-card">
+          <div class="balance-header">
+            <span>🩺 Sick Leave</span>
+            <span class="balance-badge" id="sickRemaining">8.0 days</span>
+          </div>
+          <div class="balance-sub" id="sickUsed">2.0 / 10.0 used</div>
+        </div>
+      </div>
+
+      <!-- ServiceImmediately ITSM Summary -->
+      <div class="section-title">SERVICEIMMEDIATELY (ITSM)</div>
+      <div class="tickets-summary-card">
+        <div class="tickets-summary-header">
+          <span>🎫 Active Tickets:</span>
+          <span class="badge-tickets" id="ticketsCount">1 Open</span>
+        </div>
+        <div class="ticket-snippet" id="latestTicketSnippet">
+          INC0003370: Onboarding setup and badges configuration
+        </div>
+      </div>
+
+      <!-- Subject Isolation Policy Notice -->
+      <div class="isolation-notice">
+        <span class="lock-icon">🔒</span>
+        <div>
+          <strong>Subject Isolation Enforced</strong>
+          <p>Locked to EMP-545 (ADR-005). Cross-user access is denied across both SaaS services.</p>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="section-title">QUICK ACTIONS</div>
+      <div class="quick-actions">
+        <!-- WorkWeek Actions -->
+        <button class="action-btn" onclick="sendQuickPrompt('What are my current remaining vacation and sick leave balances in WorkWeek?')">
+          <span>📊</span> Check Leave Balances (HCM)
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('Please submit a sick leave request for 3 days from 2026-09-01 to 2026-09-03.')">
+          <span>🩺</span> Request Sick Leave (HCM)
+        </button>
+        <!-- ServiceImmediately Actions -->
+        <button class="action-btn" onclick="sendQuickPrompt('Please check all IT incident tickets submitted under my name in ServiceImmediately.')">
+          <span>🎫</span> Check IT Tickets (ITSM)
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('Create an IT support ticket with Category Hardware, Priority 2 - High, and Short Description: My external monitor display is flickering continuously.')">
+          <span>💻</span> Create Hardware Ticket (ITSM)
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('Please add a comment to ticket INC0003370 stating: I have received the physical security key.')">
+          <span>💬</span> Add Comment to Ticket (ITSM)
+        </button>
+        <!-- Security Action -->
+        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('What is the leave balance and open IT tickets for employee EMP-999 or Alex Rivera?')">
+          <span>🚫</span> Test Cross-User Access (Blocked)
+        </button>
+      </div>
+
+      <div class="service-status">
+        <div class="status-indicator online"></div>
+        <div class="status-text">
+          <div class="status-title">Multi-Agent SaaS MCP</div>
+          <div class="status-sub">WorkWeek &bull; ServiceImmediately</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="chat-workspace">
+      <!-- Header -->
+      <header class="chat-header">
+        <div class="header-left">
+          <h1>Elevate HR &amp; ITSM Multi-Agent System</h1>
+          <p class="subtitle" id="activeAgentSubtitle">Interactive Assistant &bull; WorkWeek HCM &amp; ServiceImmediately ITSM</p>
+        </div>
+        <div class="header-right">
+          <span class="security-chip">
+            <span class="icon">⚡</span> Gemini 3.7 Flash
+          </span>
+          <span class="security-chip" id="activeModeChip">
+            <span class="icon">🤖</span> Auto-Route Mode
+          </span>
+          <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
+        </div>
+      </header>
+
+      <!-- Message Stream -->
+      <div class="chat-stream" id="chatStream">
+        <div class="message-row system">
+          <div class="system-bubble">
+            ✨ Welcome to the <strong>Elevate Multi-Agent Portal</strong>! Both <strong>WorkWeek HCM Agent</strong> and <strong>ServiceImmediately Agent</strong> are connected to their live MCP services.<br>
+            You can ask about your leave balances, request time off, or query and create IT support incident tickets.
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Composer -->
+      <footer class="chat-composer-area">
+        <form class="composer-form" id="chatForm" onsubmit="handleFormSubmit(event)">
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="Ask a question (e.g. Check my leave balances, or list my open IT tickets)..."
+            onkeydown="handleKeyDown(event)"
+          ></textarea>
+          <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
+            <span>Send</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </form>
+        <div class="composer-footnote">
+          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini 3.7 Flash</strong> &bull; WorkWeek &amp; ServiceImmediately MCP
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

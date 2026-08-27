@@ -13,7 +13,8 @@ async def test_connectivity():
     headers = {"X-MCP-Token": DEFAULT_MCP_TOKEN}
 
     async with httpx.AsyncClient(headers=headers, timeout=15.0) as client:
-        async with streamable_http_client(DEFAULT_MCP_URL, http_client=client) as (read, write):
+        async with streamable_http_client(DEFAULT_MCP_URL, http_client=client) as streams:
+            read, write = streams[0], streams[1]
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 print("[✓] MCP Session initialized successfully!\n")
@@ -27,16 +28,6 @@ async def test_connectivity():
                     input_schema = getattr(tool, "input_schema", getattr(tool, "inputSchema", {}))
                     properties = input_schema.get("properties", {}) if isinstance(input_schema, dict) else getattr(input_schema, "properties", {})
                     print(f"    Parameters: {list(properties.keys()) if isinstance(properties, dict) else properties}\n")
-
-                # List resources
-                try:
-                    resources_response = await session.list_resources()
-                    print(f"[✓] Retrieved {len(resources_response.resources)} Resources:")
-                    for res in resources_response.resources:
-                        print(f"  - URI: {res.uri}")
-                        print(f"    Name: {res.name}\n")
-                except Exception as res_err:
-                    print(f"[!] Note: No resources or unable to list resources: {res_err}")
 
 
 if __name__ == "__main__":
