@@ -75,9 +75,9 @@
         <div class="balance-card">
           <div class="balance-header">
             <span>🩺 Sick Leave</span>
-            <span class="balance-badge" id="sickRemaining">10.0 days</span>
+            <span class="balance-badge" id="sickRemaining">8.0 days</span>
           </div>
-          <div class="balance-sub" id="sickUsed">0.0 of 10.0 days used</div>
+          <div class="balance-sub" id="sickUsed">2.0 of 10.0 days used</div>
         </div>
       </div>
 
@@ -92,23 +92,23 @@
 
       <div class="section-title">QUICK ACTIONS</div>
       <div class="quick-actions">
-        <button class="action-btn" onclick="sendQuickPrompt('請問我目前的特休與病假剩餘天數是多少？')">
-          <span>📊</span> 查詢特休與病假餘額
+        <button class="action-btn" onclick="sendQuickPrompt('What are my current remaining vacation and sick leave balances in WorkWeek?')">
+          <span>📊</span> Check Leave Balances
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('請顯示我的個人聯絡資訊與地址')">
-          <span>👤</span> 查詢個人檔案與聯絡資料
+        <button class="action-btn" onclick="sendQuickPrompt('Show me my personal profile and contact information.')">
+          <span>👤</span> View Profile &amp; Contact Info
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('請幫我申請 2026-09-01 到 2026-09-03 共 3 天的病假 (Sick Leave)')">
-          <span>🩺</span> 申請 3 天病假
+        <button class="action-btn" onclick="sendQuickPrompt('Please submit a sick leave request for 3 days from 2026-09-01 to 2026-09-03.')">
+          <span>🩺</span> Request 3 Days Sick Leave
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('請幫我申請 2026-10-12 到 2026-10-16 共 5 天的特休假 (Vacation Leave)')">
-          <span>✈️</span> 申請 5 天特休假
+        <button class="action-btn" onclick="sendQuickPrompt('Please submit a vacation leave request for 5 days from 2026-10-12 to 2026-10-16.')">
+          <span>✈️</span> Request 5 Days Vacation Leave
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('請列出我所有的請假申請歷史紀錄 (Leave Requests)')">
-          <span>📜</span> 查詢所有請假歷史紀錄
+        <button class="action-btn" onclick="sendQuickPrompt('Show me all my submitted time-off requests in WorkWeek.')">
+          <span>📜</span> View Leave Requests History
         </button>
-        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('請幫我查詢員工 EMP-999 或 Alex Rivera 的請假餘額與住址')">
-          <span>🚫</span> 測試越權查詢 (Subject Isolation)
+        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('What is the leave balance and home address for employee EMP-999 or Alex Rivera?')">
+          <span>🚫</span> Test Cross-User Access (Blocked)
         </button>
       </div>
 
@@ -144,8 +144,8 @@
       <div class="chat-stream" id="chatStream">
         <div class="message-row system">
           <div class="system-bubble">
-            ✨ <strong>WorkWeek HCM Agent</strong> 已連線至 WorkWeek SaaS MCP Server (<code>/work-week/mcp/</code>)。<br>
-            您可以使用自然語言查詢您的特休/病假餘額、個人聯絡資料、申請請假或查詢歷史紀錄。
+            ✨ <strong>WorkWeek HCM Agent</strong> is connected to the WorkWeek SaaS MCP Server (<code>/work-week/mcp/</code>).<br>
+            You can inquire in natural language about your vacation/sick leave balances, contact information, submit time-off requests, or view your leave history.
           </div>
         </div>
       </div>
@@ -156,11 +156,11 @@
           <textarea
             id="messageInput"
             rows="1"
-            placeholder="輸入您的問題或指示 (例如：請問我還剩幾天特休假？或幫我請 3 天病假)..."
+            placeholder="Ask about your leave balances, contact info, or request time off..."
             onkeydown="handleKeyDown(event)"
           ></textarea>
           <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
-            <span>發送</span>
+            <span>Send</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
               <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -168,7 +168,7 @@
           </button>
         </form>
         <div class="composer-footnote">
-          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini Vertex AI</strong> &bull; WorkWeek MCP Client
+          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini 3.7 Flash</strong> &bull; WorkWeek MCP Client
         </div>
       </footer>
     </main>

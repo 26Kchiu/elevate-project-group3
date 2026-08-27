@@ -177,8 +177,8 @@ class WorkWeekHCMAgent:
 
 async def main():
     agent = WorkWeekHCMAgent()
-    # Test Scenario: Query employee's leave balances with gemini-3.7-flash
-    result = await agent.run("請問我目前的特休與病假剩餘天數是多少？")
+    # Test Scenario: Query employee's leave balances in English
+    result = await agent.run("What are my current remaining vacation and sick leave balances?")
     print(f"\nFinal Result from {agent.model_name}:\n{result['reply']}")
 
 

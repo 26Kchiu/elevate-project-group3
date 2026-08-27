@@ -111,7 +111,7 @@ async function handleFormSubmit(e) {
 
     if (!res.ok) {
       const err = await res.json();
-      appendAgentMessage("⚠️ 執行錯誤: " + (err.detail || "Server error"));
+      appendAgentMessage("⚠️ Execution error: " + (err.detail || "Server error"));
       return;
     }
 
@@ -122,7 +122,7 @@ async function handleFormSubmit(e) {
     syncIdentity();
   } catch (err) {
     removeMessage(typingId);
-    appendAgentMessage("⚠️ 網路錯誤: " + err.message);
+    appendAgentMessage("⚠️ Network error: " + err.message);
   } finally {
     sendBtn.disabled = false;
   }
@@ -143,7 +143,7 @@ function appendTypingIndicator() {
   const id = "typing-" + Date.now();
   row.id = id;
   row.className = "message-row agent";
-  row.innerHTML = `<div class="agent-bubble"><em>⚡ WorkWeek HCM Agent 正在查詢 WorkWeek SaaS MCP Server...</em></div>`;
+  row.innerHTML = `<div class="agent-bubble"><em>⚡ WorkWeek HCM Agent is querying WorkWeek SaaS MCP Server...</em></div>`;
   stream.appendChild(row);
   stream.scrollTop = stream.scrollHeight;
   return id;
@@ -194,7 +194,7 @@ function clearChat() {
   stream.innerHTML = `
     <div class="message-row system">
       <div class="system-bubble">
-        對話已清除。您可以繼續提出新的請假、休假餘額或個人資料查詢。
+        Chat cleared. Ready for new leave, balance, or profile inquiries.
       </div>
     </div>
   `;
