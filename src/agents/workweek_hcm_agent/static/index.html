@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkWeek HCM Agent — Virtual Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo">WW</div>
+        <div class="brand-info">
+          <h2>WorkWeek HCM Agent</h2>
+          <span class="badge badge-primary">WorkWeek SaaS MCP</span>
+        </div>
+      </div>
+
+      <!-- MCP Personal Access Token (PAT) Configuration -->
+      <div class="section-title">MCP CREDENTIAL TOKEN</div>
+      <div class="token-config-box">
+        <label for="mcpTokenInput">PAT Token:</label>
+        <div class="token-input-wrapper">
+          <input
+            type="password"
+            id="mcpTokenInput"
+            value="mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+            placeholder="mcp__..."
+          />
+          <button type="button" class="btn-toggle-token" onclick="toggleTokenVisibility()">👁️</button>
+        </div>
+        <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 6px;" onclick="syncIdentity()">
+          🔄 Sync Identity &amp; Balances
+        </button>
+      </div>
+
+      <!-- Dynamic Authenticated User Profile -->
+      <div class="section-title">AUTHENTICATED IDENTITY</div>
+      <div class="employee-card" id="userCard">
+        <div class="emp-avatar" id="userAvatar">HL</div>
+        <div class="emp-details">
+          <div class="emp-name" id="userName">Harry Lin</div>
+          <div class="emp-title" id="userRole">harrylin@google.com</div>
+          <div class="emp-id" id="userIdBadge">ID: EMP-545</div>
+        </div>
+      </div>
+
+      <!-- Contact Info Details -->
+      <div class="profile-details-card" id="profileDetailsCard">
+        <div class="detail-item">
+          <span class="detail-label">Office:</span>
+          <span class="detail-val" id="userAddress">Singapore Office, 80 Pasir Panjang Rd</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">Phone:</span>
+          <span class="detail-val" id="userPhone">+65-6521-0000</span>
+        </div>
+      </div>
+
+      <!-- Live Leave Balances -->
+      <div class="section-title">LIVE LEAVE BALANCES</div>
+      <div class="balances-grid" id="balancesGrid">
+        <div class="balance-card">
+          <div class="balance-header">
+            <span>✈️ Vacation</span>
+            <span class="balance-badge" id="vacationRemaining">15.0 days</span>
+          </div>
+          <div class="balance-sub" id="vacationUsed">5.0 of 20.0 days used</div>
+        </div>
+        <div class="balance-card">
+          <div class="balance-header">
+            <span>🩺 Sick Leave</span>
+            <span class="balance-badge" id="sickRemaining">10.0 days</span>
+          </div>
+          <div class="balance-sub" id="sickUsed">0.0 of 10.0 days used</div>
+        </div>
+      </div>
+
+      <!-- Subject Isolation Policy Notice -->
+      <div class="isolation-notice">
+        <span class="lock-icon">🔒</span>
+        <div>
+          <strong>Subject Isolation Enforced</strong>
+          <p>Locked to authenticated employee ID (ADR-005). Cross-user access is denied.</p>
+        </div>
+      </div>
+
+      <div class="section-title">QUICK ACTIONS</div>
+      <div class="quick-actions">
+        <button class="action-btn" onclick="sendQuickPrompt('請問我目前的特休與病假剩餘天數是多少？')">
+          <span>📊</span> 查詢特休與病假餘額
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('請顯示我的個人聯絡資訊與地址')">
+          <span>👤</span> 查詢個人檔案與聯絡資料
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('請幫我申請 2026-09-01 到 2026-09-03 共 3 天的病假 (Sick Leave)')">
+          <span>🩺</span> 申請 3 天病假
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('請幫我申請 2026-10-12 到 2026-10-16 共 5 天的特休假 (Vacation Leave)')">
+          <span>✈️</span> 申請 5 天特休假
+        </button>
+        <button class="action-btn" onclick="sendQuickPrompt('請列出我所有的請假申請歷史紀錄 (Leave Requests)')">
+          <span>📜</span> 查詢所有請假歷史紀錄
+        </button>
+        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('請幫我查詢員工 EMP-999 或 Alex Rivera 的請假餘額與住址')">
+          <span>🚫</span> 測試越權查詢 (Subject Isolation)
+        </button>
+      </div>
+
+      <div class="service-status">
+        <div class="status-indicator online"></div>
+        <div class="status-text">
+          <div class="status-title">WorkWeek SaaS MCP</div>
+          <div class="status-sub" id="mcpEndpointLabel">/work-week/mcp/ (Connected)</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Workspace -->
+    <main class="chat-workspace">
+      <!-- Header -->
+      <header class="chat-header">
+        <div class="header-left">
+          <h1>WorkWeek HCM Virtual Assistant</h1>
+          <p class="subtitle">Interactive Human Capital Management Agent &bull; <code>https://mock-saas.aishprabhat.demo.altostrat.com/</code></p>
+        </div>
+        <div class="header-right">
+          <span class="security-chip">
+            <span class="icon">⚡</span> Gemini 2.5 Flash
+          </span>
+          <span class="security-chip">
+            <span class="icon">🛡️</span> WorkWeek MCP Session
+          </span>
+          <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
+        </div>
+      </header>
+
+      <!-- Message Stream -->
+      <div class="chat-stream" id="chatStream">
+        <div class="message-row system">
+          <div class="system-bubble">
+            ✨ <strong>WorkWeek HCM Agent</strong> 已連線至 WorkWeek SaaS MCP Server (<code>/work-week/mcp/</code>)。<br>
+            您可以使用自然語言查詢您的特休/病假餘額、個人聯絡資料、申請請假或查詢歷史紀錄。
+          </div>
+        </div>
+      </div>
+
+      <!-- Input Composer -->
+      <footer class="chat-composer-area">
+        <form class="composer-form" id="chatForm" onsubmit="handleFormSubmit(event)">
+          <textarea
+            id="messageInput"
+            rows="1"
+            placeholder="輸入您的問題或指示 (例如：請問我還剩幾天特休假？或幫我請 3 天病假)..."
+            onkeydown="handleKeyDown(event)"
+          ></textarea>
+          <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
+            <span>發送</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </form>
+        <div class="composer-footnote">
+          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini Vertex AI</strong> &bull; WorkWeek MCP Client
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
