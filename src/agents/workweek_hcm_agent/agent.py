@@ -20,7 +20,12 @@ os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 
 from .prompts import DEFAULT_EMPLOYEE_ID, get_system_instruction
-from .tools import DEFAULT_MCP_TOKEN, DEFAULT_MCP_URL
+from .tools import (
+    ACCESS_DENIED_MESSAGE,
+    DEFAULT_MCP_TOKEN,
+    DEFAULT_MCP_URL,
+    enforce_subject_isolation,
+)
 
 DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.7-flash")
 
@@ -77,7 +82,7 @@ class WorkWeekHCMAgent:
         print(f"\n{'=' * 55}")
         print(f"[*] Starting {self.name} (Model: {self.model_name})")
         print(f"[*] MCP Endpoint: {self.mcp_url}")
-        print(f"[*] Employee ID: {active_emp_id}")
+        print(f"[*] Authenticated Employee ID: {active_emp_id}")
         print(f"[*] User Prompt: {user_prompt}")
         print(f"{'=' * 55}\n")
 
@@ -129,9 +134,16 @@ class WorkWeekHCMAgent:
                             print(f"[Agent -> Tool Call] Invoking WorkWeek MCP `{tool_name}`: {json.dumps(tool_args, ensure_ascii=False)}")
                             tool_calls_record.append({"name": tool_name, "args": tool_args})
 
-                            # Execute remote tool on WorkWeek MCP Server
-                            tool_result = await session.call_tool(name=tool_name, arguments=tool_args)
-                            result_text = "\n".join([c.text for c in tool_result.content if hasattr(c, "text")])
+                            # Strict Access Control: Enforce Subject Isolation Guardrail
+                            target_id = tool_args.get("employee_id")
+                            if target_id and enforce_subject_isolation(target_id, active_emp_id):
+                                result_text = ACCESS_DENIED_MESSAGE
+                                print(f"[Access Control Guardrail] Blocked unauthorized cross-user tool call for target `{target_id}` (authenticated: `{active_emp_id}`)")
+                            else:
+                                # Execute remote tool on WorkWeek MCP Server
+                                tool_result = await session.call_tool(name=tool_name, arguments=tool_args)
+                                result_text = "\n".join([c.text for c in tool_result.content if hasattr(c, "text")])
+
                             print(f"[MCP -> Agent Result] Response payload: {result_text}\n")
                             tool_responses_record.append({"name": tool_name, "response": result_text})
 
@@ -177,9 +189,9 @@ class WorkWeekHCMAgent:
 
 async def main():
     agent = WorkWeekHCMAgent()
-    # Test Scenario: Query employee's leave balances in English
-    result = await agent.run("What are my current remaining vacation and sick leave balances?")
-    print(f"\nFinal Result from {agent.model_name}:\n{result['reply']}")
+    # Test Scenario: Attempt to query another employee's information
+    result = await agent.run("Please look up the leave balance and home address for employee EMP-999 or Alex Rivera.")
+    print(f"\nFinal Result:\n{result['reply']}")
 
 
 if __name__ == "__main__":
