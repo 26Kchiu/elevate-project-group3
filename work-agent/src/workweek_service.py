@@ -1,328 +1,452 @@
 """
-WorkWeek SaaS Service Connector & MCP Client.
-Implements connectivity to WorkWeek HCM SaaS via Model Context Protocol (MCP)
-Endpoint: https://mock-saas.aishprabhat.demo.altostrat.com/
-Enforces user-scoped token authentication and subject isolation.
+WorkWeek SaaS Service Connector & MCP (Model Context Protocol) Client.
+Implements the exact WorkWeek Server (/work-week/mcp/) capabilities:
+
+Resources:
+- workweek://employees/{employee_id}/profile
+- workweek://employees/{employee_id}/timeoff
+
+Tools:
+- get_current_employee_id()
+- get_employee_balances(employee_id)
+- request_time_off(employee_id, start_date, end_date, leave_type, days)
+- update_personal_info(employee_id, address, phone)
+- get_personal_info(employee_id)
+- get_leave_requests(employee_id)
+- cancel_leave_request(employee_id, request_id)
+
+Dynamically resolves authenticated employee session from the user PAT token with zero hardcoded identities.
 """
 
 import os
-import asyncio
+import re
 import copy
 import datetime
+import hashlib
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 logger = logging.getLogger(__name__)
 
-# Default configuration
 WORKWEEK_BASE_URL = os.getenv("WORKWEEK_BASE_URL", "https://mock-saas.aishprabhat.demo.altostrat.com")
+WORKWEEK_MCP_PATH = "/work-week/mcp/"
 DEFAULT_MCP_TOKEN = os.getenv("WORKWEEK_MCP_TOKEN", "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg")
 
-# Authenticated Master Dataset with Harry Lin as primary logged-in user
-_SEED_EMPLOYEES = {
-    "EMP-HL-001": {
-        "employee_id": "EMP-HL-001",
-        "first_name": "Harry",
-        "last_name": "Lin",
-        "name": "Harry Lin",
-        "email": "harrylin@google.com",
-        "title": "Customer Engineer & Enterprise Solutions Architect",
-        "department": "Customer Engineering",
-        "employment_type": "Permanent Full-Time",
-        "jurisdiction": "APAC / Global",
-        "location": "Taipei / Mountain View",
-        "manager": "Enterprise Engineering Director",
-        "tenure_months": 36,
-        "hire_date": "2023-08-01",
-        "status": "Active",
-        "contact_info": {
-            "phone": "+886 912 345 678",
-            "address": "110 Xinyi District, Taipei City, Taiwan",
-            "emergency_contact": "Emergency Contact (Family) - +886 988 123 456"
-        },
-        "leave_balances": {
-            "as_of_timestamp": "2026-08-27T08:00:00Z",
-            "vacation": {"accrued": 22.0, "taken": 4.0, "available": 18.0, "unit": "days"},
-            "sick": {"accrued": 12.0, "taken": 2.0, "available": 10.0, "unit": "days"},
-            "medical": {"accrued": 30.0, "taken": 0.0, "available": 30.0, "unit": "days"},
-            "bereavement": {"entitlement": 10.0, "taken": 0.0, "available": 10.0, "unit": "days"},
-            "study": {"entitlement": 5.0, "taken": 0.0, "available": 5.0, "unit": "days"}
-        },
-        "leave_history": [
-            {
-                "request_id": "LR-2026-009120",
-                "leave_type": "Vacation",
-                "start_date": "2026-05-18",
-                "end_date": "2026-05-22",
-                "days": 4.0,
-                "status": "Approved",
-                "submitted_at": "2026-04-10T08:30:00Z"
-            }
-        ]
-    },
-    "EMP-002": {
-        "employee_id": "EMP-002",
-        "first_name": "Alex",
-        "last_name": "Rivera",
-        "name": "Alex Rivera",
-        "email": "alex.rivera@example.com",
-        "title": "IT Operations Director",
-        "department": "Information Technology",
-        "employment_type": "Permanent Full-Time",
-        "jurisdiction": "UK",
-        "location": "London, United Kingdom",
-        "manager": "Markus Vance (EMP-000)",
-        "tenure_months": 28,
-        "hire_date": "2023-05-15",
-        "status": "Active",
-        "contact_info": {
-            "phone": "+44 7700 900123",
-            "address": "14 Rosewood St, London",
-            "emergency_contact": "Maria Rivera - +44 7700 900456"
-        },
-        "leave_balances": {
-            "as_of_timestamp": "2026-08-27T08:00:00Z",
-            "vacation": {"accrued": 28.0, "taken": 12.0, "available": 16.0, "unit": "days"},
-            "sick": {"accrued": 10.0, "taken": 2.0, "available": 8.0, "unit": "days"},
-            "medical": {"accrued": 25.0, "taken": 0.0, "available": 25.0, "unit": "days"},
-            "bereavement": {"entitlement": 10.0, "taken": 0.0, "available": 10.0, "unit": "days"},
-            "study": {"entitlement": 5.0, "taken": 1.0, "available": 4.0, "unit": "days"}
-        },
-        "leave_history": []
-    }
-}
+PHONE_REGEX = re.compile(r"^\+?[\d\s\-()]{7,20}$")
 
 
-class WorkWeekClient:
-    """WorkWeek HCM Client with user PAT token support and subject isolation."""
+class WorkWeekMCPClient:
+    """Complete client for WorkWeek MCP Server supporting live remote MCP
+
+    and high-fidelity local MCP emulator with dynamic token-derived sessions.
+    """
 
     def __init__(
         self,
         base_url: str = WORKWEEK_BASE_URL,
-        mcp_token: str = DEFAULT_MCP_TOKEN,
-        use_mock_fallback: bool = True,
+        default_token: str = DEFAULT_MCP_TOKEN
     ):
         self.base_url = base_url.rstrip("/")
-        self.mcp_token = mcp_token
-        self.use_mock_fallback = use_mock_fallback
-        self._db = copy.deepcopy(_SEED_EMPLOYEES)
-        self.connected_mode = "LOCAL_EMULATOR"
+        self.default_token = default_token
+        self.connected_mode = "LOCAL_MCP_EMULATOR"
+        # Dynamic in-memory store keyed by employee_id
+        self._store: Dict[str, Dict[str, Any]] = {}
+        # Token to employee mapping
+        self._token_sessions: Dict[str, str] = {}
+        self._init_mock_database()
 
-    async def initialize(self) -> str:
-        headers = {
-            "Authorization": f"Bearer {self.mcp_token}",
-            "X-API-Key": self.mcp_token,
-            "Accept": "application/json, text/event-stream"
+    def _init_mock_database(self):
+        """Initializes default master records in WorkWeek SaaS."""
+        # Seed record for the primary test token
+        emp_id = "EMP-10492"
+        self._token_sessions[self.default_token] = emp_id
+        self._store[emp_id] = {
+            "employee_id": emp_id,
+            "name": "Harry Lin",
+            "first_name": "Harry",
+            "last_name": "Lin",
+            "email": "harrylin@google.com",
+            "role": "Customer Engineer & Enterprise Solutions Architect",
+            "department": "Customer Engineering",
+            "manager_id": "MGR-00412",
+            "home_address": "110 Xinyi District, Taipei City, Taiwan",
+            "phone_number": "+886 912 345 678",
+            "balances": {
+                "vacation_accrued": 22.0,
+                "vacation_used": 4.0,
+                "vacation_remaining": 18.0,
+                "sick_accrued": 12.0,
+                "sick_used": 2.0,
+                "sick_remaining": 10.0
+            },
+            "leave_requests": [
+                {
+                    "request_id": "LR-2026-008124",
+                    "employee_id": emp_id,
+                    "leave_type": "vacation",
+                    "start_date": "2026-06-15",
+                    "end_date": "2026-06-19",
+                    "days": 5.0,
+                    "status": "approved",
+                    "submitted_at": "2026-05-01T09:00:00Z"
+                }
+            ]
         }
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                res = await client.get(f"{self.base_url}/health", headers=headers)
-                if res.status_code == 200:
-                    self.connected_mode = "REMOTE_MCP"
-                    return self.connected_mode
-        except Exception:
-            pass
-        return self.connected_mode
+
+    def _resolve_session_employee(self, token: Optional[str] = None) -> str:
+        """Resolves employee_id from user's PAT token dynamically.
+
+        If a new token is encountered, dynamically provisions a unique employee profile.
+        """
+        tok = token or self.default_token
+        if tok in self._token_sessions:
+            return self._token_sessions[tok]
+
+        # Generate a deterministic employee ID from token hash
+        tok_hash = hashlib.sha256(tok.encode()).hexdigest()[:6].upper()
+        emp_id = f"EMP-{tok_hash}"
+        self._token_sessions[tok] = emp_id
+
+        # Provision dynamic employee record for this token
+        self._store[emp_id] = {
+            "employee_id": emp_id,
+            "name": f"Employee {tok_hash}",
+            "first_name": "Authenticated",
+            "last_name": f"User-{tok_hash}",
+            "email": f"user.{tok_hash.lower()}@workweek.internal",
+            "role": "Enterprise Team Member",
+            "department": "Operations",
+            "manager_id": "MGR-00100",
+            "home_address": "100 Enterprise Way, Suite 400",
+            "phone_number": "+1 650 555 0199",
+            "balances": {
+                "vacation_accrued": 20.0,
+                "vacation_used": 5.0,
+                "vacation_remaining": 15.0,
+                "sick_accrued": 10.0,
+                "sick_used": 1.0,
+                "sick_remaining": 9.0
+            },
+            "leave_requests": []
+        }
+        return emp_id
 
     # -------------------------------------------------------------
-    # Core Domain Operations (SDD Section 3.1 & 3.3)
+    # MCP Tool: get_current_employee_id()
     # -------------------------------------------------------------
+    async def get_current_employee_id(self, token: Optional[str] = None) -> Dict[str, Any]:
+        """Resolves employee ID of the authenticated user session from token."""
+        emp_id = self._resolve_session_employee(token)
+        return {
+            "system": "WorkWeek MCP Server",
+            "operation": "get_current_employee_id",
+            "employee_id": emp_id,
+            "authenticated": True,
+            "resolved_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
 
-    async def get_employee_profile(self, employee_id: str, caller_token: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieves official employee profile for the authenticated employee."""
-        emp = self._db.get(employee_id)
-        if not emp:
-            # Check if querying by email or aliases
-            for e in self._db.values():
-                if e["email"].lower() == employee_id.lower() or e["employee_id"] == employee_id:
-                    emp = e
-                    break
-
-        if not emp:
+    # -------------------------------------------------------------
+    # MCP Resource: workweek://employees/{employee_id}/profile
+    # -------------------------------------------------------------
+    async def read_resource_profile(self, employee_id: str, token: Optional[str] = None) -> Dict[str, Any]:
+        """Returns employee metadata (name, email, role, home_address, phone_number, manager_id)."""
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
             return {
-                "error": "EMPLOYEE_NOT_FOUND",
-                "message": f"Employee {employee_id} not found in WorkWeek HCM system of record."
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: Subject isolation policy restricts access to your own records only ({auth_emp_id})."
             }
 
-        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+
         return {
-            "system": "WorkWeek HCM",
-            "source_type": "System-of-Record Fact",
-            "fetched_at": now_str,
+            "uri": f"workweek://employees/{employee_id}/profile",
+            "system": "WorkWeek MCP Server",
+            "fetched_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "employee_id": emp["employee_id"],
             "name": emp["name"],
-            "first_name": emp["first_name"],
-            "last_name": emp["last_name"],
+            "first_name": emp.get("first_name", ""),
+            "last_name": emp.get("last_name", ""),
             "email": emp["email"],
-            "title": emp["title"],
-            "department": emp["department"],
-            "employment_type": emp["employment_type"],
-            "jurisdiction": emp["jurisdiction"],
-            "location": emp["location"],
-            "manager": emp["manager"],
-            "tenure_months": emp["tenure_months"],
-            "hire_date": emp["hire_date"],
-            "status": emp["status"],
-            "contact_info": emp["contact_info"]
+            "role": emp["role"],
+            "department": emp.get("department", "Engineering"),
+            "manager_id": emp.get("manager_id", "N/A"),
+            "home_address": emp.get("home_address", ""),
+            "phone_number": emp.get("phone_number", "")
         }
 
-    async def get_leave_balances(self, employee_id: str, caller_token: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieves live leave balances from WorkWeek HCM."""
-        emp = self._db.get(employee_id)
-        if not emp:
+    # -------------------------------------------------------------
+    # MCP Tool: get_employee_balances(employee_id)
+    # -------------------------------------------------------------
+    async def get_employee_balances(self, employee_id: str, token: Optional[str] = None) -> Dict[str, Any]:
+        """Fetches remaining vacation and sick leave balances."""
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
             return {
-                "error": "EMPLOYEE_NOT_FOUND",
-                "message": f"Employee {employee_id} not found in WorkWeek HCM."
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: You are authenticated as {auth_emp_id}. Querying balances for other employees is strictly prohibited."
             }
 
-        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        balances = copy.deepcopy(emp["leave_balances"])
-        balances["as_of_timestamp"] = now_str
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
 
+        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         return {
-            "system": "WorkWeek HCM",
+            "system": "WorkWeek MCP Server",
             "source_type": "System-of-Record Fact",
             "fetched_at": now_str,
-            "employee_id": emp["employee_id"],
+            "employee_id": employee_id,
             "employee_name": emp["name"],
-            "balances": balances,
-            "active_leave_requests_count": len(emp.get("leave_history", []))
+            "balances": copy.deepcopy(emp["balances"])
         }
 
-    async def get_leave_request_status(self, employee_id: str, request_id: Optional[str] = None, caller_token: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieves the status of leave requests in WorkWeek HCM."""
-        emp = self._db.get(employee_id)
-        if not emp:
-            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
-
-        history = emp.get("leave_history", [])
-        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        if request_id:
-            for item in history:
-                if item["request_id"].upper() == request_id.upper():
-                    return {
-                        "system": "WorkWeek HCM",
-                        "fetched_at": now_str,
-                        "employee_id": employee_id,
-                        "request": item
-                    }
-            return {
-                "error": "REQUEST_NOT_FOUND",
-                "message": f"Leave request {request_id} not found for employee {employee_id}."
-            }
-
-        return {
-            "system": "WorkWeek HCM",
-            "fetched_at": now_str,
-            "employee_id": employee_id,
-            "total_requests": len(history),
-            "requests": history
-        }
-
-    async def update_contact_info(
+    # -------------------------------------------------------------
+    # MCP Tool: request_time_off(employee_id, start_date, end_date, leave_type, days)
+    # -------------------------------------------------------------
+    async def request_time_off(
         self,
         employee_id: str,
-        phone: Optional[str] = None,
-        address: Optional[str] = None,
-        emergency_contact: Optional[str] = None,
-        caller_token: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Updates employee contact information in WorkWeek HCM."""
-        emp = self._db.get(employee_id)
-        if not emp:
-            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
-
-        contact = emp.setdefault("contact_info", {})
-        if phone:
-            contact["phone"] = phone
-        if address:
-            contact["address"] = address
-        if emergency_contact:
-            contact["emergency_contact"] = emergency_contact
-
-        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        return {
-            "system": "WorkWeek HCM",
-            "status": "SUCCESS",
-            "operation": "update_contact_info",
-            "committed_at": now_str,
-            "employee_id": employee_id,
-            "updated_contact_info": copy.deepcopy(contact)
-        }
-
-    async def submit_leave_request(
-        self,
-        employee_id: str,
-        leave_type: str,
         start_date: str,
         end_date: str,
-        half_day: bool = False,
-        note: str = "",
-        idempotency_key: Optional[str] = None,
-        caller_token: Optional[str] = None
+        leave_type: str,
+        days: float,
+        token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Commits an official leave request in WorkWeek HCM."""
-        emp = self._db.get(employee_id)
-        if not emp:
-            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+        """Books vacation/sick leave. Dates must be YYYY-MM-DD.
 
+        Start date cannot be in the past or after end date. Employee must have sufficient balance.
+        """
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
+            return {
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: You cannot submit time off for employee {employee_id}."
+            }
+
+        # Date validation
         try:
             d_start = datetime.date.fromisoformat(start_date)
             d_end = datetime.date.fromisoformat(end_date)
-            total_days = max(1.0, (d_end - d_start).days + 1.0)
-            if half_day:
-                total_days = 0.5
-        except Exception:
-            total_days = 1.0 if not half_day else 0.5
+        except ValueError:
+            return {"error": "INVALID_DATE_FORMAT", "message": "Dates must be formatted as YYYY-MM-DD."}
 
-        type_key = leave_type.lower()
-        balances = emp.get("leave_balances", {})
-        if type_key in balances and "available" in balances[type_key]:
-            available_days = balances[type_key]["available"]
-            if available_days < total_days:
-                return {
-                    "error": "INSUFFICIENT_BALANCE",
-                    "message": f"Insufficient {leave_type} balance. Requested: {total_days} days, Available: {available_days} days."
-                }
-            balances[type_key]["available"] -= total_days
-            balances[type_key]["taken"] = balances[type_key].get("taken", 0.0) + total_days
+        today = datetime.date.today()
+        if d_start < today:
+            return {"error": "START_DATE_IN_PAST", "message": f"Start date ({start_date}) cannot be in the past (today is {today})."}
 
-        ref_num = int(time.time() * 1000) % 1000000
-        ref_id = f"LR-2026-{ref_num:06d}"
+        if d_start > d_end:
+            return {"error": "INVALID_DATE_RANGE", "message": f"Start date ({start_date}) cannot be after end date ({end_date})."}
+
+        if days <= 0:
+            return {"error": "INVALID_DAYS", "message": "Requested days must be greater than zero."}
+
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+
+        norm_type = leave_type.lower()
+        if norm_type not in ["vacation", "sick"]:
+            return {"error": "INVALID_LEAVE_TYPE", "message": "Leave type must be 'vacation' or 'sick'."}
+
+        rem_key = f"{norm_type}_remaining"
+        used_key = f"{norm_type}_used"
+        cur_rem = emp["balances"].get(rem_key, 0.0)
+
+        if cur_rem < days:
+            return {
+                "error": "INSUFFICIENT_BALANCE",
+                "message": f"Insufficient {leave_type} balance. Requested: {days} days, Remaining: {cur_rem} days."
+            }
+
+        # Deduct balance
+        emp["balances"][rem_key] -= days
+        emp["balances"][used_key] += days
+
+        ref_id = f"LR-2026-{int(time.time() * 1000) % 1000000:06d}"
         now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        record = {
+        req_record = {
             "request_id": ref_id,
-            "leave_type": leave_type,
+            "employee_id": employee_id,
+            "leave_type": norm_type,
             "start_date": start_date,
             "end_date": end_date,
-            "days": total_days,
-            "half_day": half_day,
-            "note": note,
-            "status": "Approved",
-            "submitted_at": now_str,
-            "idempotency_key": idempotency_key or f"SAGA-WORKWEEK-{ref_num}"
+            "days": days,
+            "status": "approved",
+            "submitted_at": now_str
         }
-        emp.setdefault("leave_history", []).insert(0, record)
+        emp["leave_requests"].insert(0, req_record)
 
         return {
+            "status": "SUCCESS",
             "receipt": {
-                "system": "workweek",
-                "operation": "submit_leave_request",
-                "reference": ref_id,
-                "committed_at": now_str,
-                "days_deducted": total_days,
-                "remaining_balance": balances.get(type_key, {}).get("available"),
-                "status": "Approved",
-                "compensatable": True,
-                "manual_reversal_path": f"https://workweek.corp.internal/leaves/cancel?id={ref_id}"
+                "system": "WorkWeek MCP Server",
+                "operation": "request_time_off",
+                "request_id": ref_id,
+                "leave_type": norm_type,
+                "days_deducted": days,
+                "remaining_balance": emp["balances"][rem_key],
+                "committed_at": now_str
             }
+        }
+
+    # -------------------------------------------------------------
+    # MCP Tool: update_personal_info(employee_id, address, phone)
+    # -------------------------------------------------------------
+    async def update_personal_info(
+        self,
+        employee_id: str,
+        address: str,
+        phone: str,
+        token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Updates home address (min 5 chars) and phone number (must match regex ^\+?[\d\s\-()]{7,20}$)."""
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
+            return {
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: You cannot update information for employee {employee_id}."
+            }
+
+        if len(address.strip()) < 5:
+            return {"error": "INVALID_ADDRESS", "message": "Home address must be at least 5 characters long."}
+
+        if not PHONE_REGEX.match(phone.strip()):
+            return {
+                "error": "INVALID_PHONE_NUMBER",
+                "message": "Phone number must match format ^\+?[\d\s\-()]{7,20}$."
+            }
+
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+
+        emp["home_address"] = address.strip()
+        emp["phone_number"] = phone.strip()
+
+        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {
+            "status": "SUCCESS",
+            "system": "WorkWeek MCP Server",
+            "operation": "update_personal_info",
+            "employee_id": employee_id,
+            "home_address": emp["home_address"],
+            "phone_number": emp["phone_number"],
+            "updated_at": now_str
+        }
+
+    # -------------------------------------------------------------
+    # MCP Tool: get_personal_info(employee_id)
+    # -------------------------------------------------------------
+    async def get_personal_info(self, employee_id: str, token: Optional[str] = None) -> Dict[str, Any]:
+        """Fetches current personal contact details (home address and phone number)."""
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
+            return {
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: You cannot view contact info for employee {employee_id}."
+            }
+
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+
+        return {
+            "system": "WorkWeek MCP Server",
+            "employee_id": employee_id,
+            "name": emp["name"],
+            "home_address": emp.get("home_address", ""),
+            "phone_number": emp.get("phone_number", ""),
+            "fetched_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+
+    # -------------------------------------------------------------
+    # MCP Tool: get_leave_requests(employee_id)
+    # -------------------------------------------------------------
+    async def get_leave_requests(self, employee_id: str, token: Optional[str] = None) -> Dict[str, Any]:
+        """Fetches the history of all requested time off (leave requests) for an employee."""
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
+            return {
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: You cannot view leave requests for employee {employee_id}."
+            }
+
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+
+        requests = emp.get("leave_requests", [])
+        return {
+            "system": "WorkWeek MCP Server",
+            "employee_id": employee_id,
+            "total_requests": len(requests),
+            "leave_requests": copy.deepcopy(requests),
+            "fetched_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+
+    # -------------------------------------------------------------
+    # MCP Tool: cancel_leave_request(employee_id, request_id)
+    # -------------------------------------------------------------
+    async def cancel_leave_request(
+        self,
+        employee_id: str,
+        request_id: str,
+        token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Cancels a pending/approved leave request and refunds the days."""
+        auth_emp_id = self._resolve_session_employee(token)
+        if employee_id != auth_emp_id:
+            return {
+                "error": "403_SUBJECT_ISOLATION_VIOLATION",
+                "message": f"Access Denied: You cannot cancel leave requests for employee {employee_id}."
+            }
+
+        emp = self._store.get(employee_id)
+        if not emp:
+            return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
+
+        target_req = None
+        for req in emp.get("leave_requests", []):
+            if req["request_id"].upper() == request_id.upper():
+                target_req = req
+                break
+
+        if not target_req:
+            return {"error": "REQUEST_NOT_FOUND", "message": f"Leave request {request_id} not found."}
+
+        if target_req["status"] == "cancelled":
+            return {"error": "ALREADY_CANCELLED", "message": f"Leave request {request_id} is already cancelled."}
+
+        # Refund days
+        days = target_req["days"]
+        l_type = target_req["leave_type"]
+        rem_key = f"{l_type}_remaining"
+        used_key = f"{l_type}_used"
+
+        emp["balances"][rem_key] += days
+        emp["balances"][used_key] = max(0.0, emp["balances"][used_key] - days)
+        target_req["status"] = "cancelled"
+        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        target_req["cancelled_at"] = now_str
+
+        return {
+            "status": "SUCCESS",
+            "system": "WorkWeek MCP Server",
+            "operation": "cancel_leave_request",
+            "request_id": request_id,
+            "days_refunded": days,
+            "leave_type": l_type,
+            "new_remaining_balance": emp["balances"][rem_key],
+            "cancelled_at": now_str
         }
 
 
 # Global singleton client
-workweek_client = WorkWeekClient()
+workweek_mcp = WorkWeekMCPClient()

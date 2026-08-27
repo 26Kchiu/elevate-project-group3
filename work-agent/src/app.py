@@ -1,13 +1,12 @@
 """
 FastAPI Server & Web GUI Backend for WorkAgent.
-Serves interactive REST API, Harry Lin identity enforcement, and static web UI assets.
+Serves REST API, MCP token session forwarding, and dynamic profile retrieval.
 """
 
 import os
 import sys
 from pathlib import Path
 
-# Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI, HTTPException, Request, Header
@@ -17,14 +16,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Any, Dict, Optional, List
 
-from src.agent import orchestrator, submit_my_leave_request, update_my_contact_info
-from src.workweek_service import workweek_client
+from src.agent import orchestrator, submit_time_off_request, submit_personal_info_update
+from src.workweek_service import workweek_mcp
 from src.security import confirmation_manager
 
 app = FastAPI(
-    title="WorkAgent - WorkWeek HCM Virtual Assistant",
-    description="Enterprise AI Conversational Agent for WorkWeek SaaS (Google ADK & Gemini)",
-    version="1.0.0"
+    title="WorkAgent - WorkWeek MCP Virtual Assistant",
+    description="Enterprise Conversational Agent connecting to WorkWeek MCP Server (/work-week/mcp/)",
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -40,7 +39,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class ChatRequest(BaseModel):
-    user_id: str = "harrylin"
+    user_id: str = "default_user"
     message: str
     mcp_token: Optional[str] = None
 
@@ -52,67 +51,63 @@ class DirectConfirmRequest(BaseModel):
     mcp_token: Optional[str] = None
 
 
-@app.on_event("startup")
-async def startup_event():
-    await workweek_client.initialize()
-
-
 @app.get("/")
 async def serve_index():
-    index_file = STATIC_DIR / "index.html"
-    return FileResponse(str(index_file))
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 
 @app.get("/api/status")
-async def get_system_status():
-    """Returns connectivity, active user, and health status."""
+async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
+    token = x_mcp_token or workweek_mcp.default_token
+    emp_res = await workweek_mcp.get_current_employee_id(token)
     return {
         "status": "HEALTHY",
-        "agent": "WorkAgent (WorkWeek HCM Specialist)",
-        "model": "Gemini 2.5 Flash / 3.7 Flash",
-        "authenticated_user": {
-            "name": "Harry Lin",
-            "email": "harrylin@google.com",
-            "employee_id": "EMP-HL-001",
-            "role": "Customer Engineer & Enterprise Solutions Architect",
-            "subject_isolation": "ENFORCED (Self-Only Access)"
+        "agent": "WorkAgent (WorkWeek MCP Domain Agent)",
+        "mcp_server": {
+            "endpoint": f"{workweek_mcp.base_url}/work-week/mcp/",
+            "mode": workweek_mcp.connected_mode,
+            "authenticated_employee_id": emp_res["employee_id"]
         },
-        "workweek_service": {
-            "endpoint": workweek_client.base_url,
-            "mode": workweek_client.connected_mode,
-            "token_configured": bool(workweek_client.mcp_token)
-        },
-        "supported_tools": [
-            "get_my_employee_profile",
-            "get_my_leave_balances",
-            "get_my_leave_request_status",
-            "stage_my_leave_request",
-            "submit_my_leave_request",
-            "stage_my_contact_update",
-            "update_my_contact_info"
-        ]
+        "capabilities": {
+            "resources": [
+                "workweek://employees/{employee_id}/profile",
+                "workweek://employees/{employee_id}/timeoff"
+            ],
+            "tools": [
+                "get_current_employee_id",
+                "get_employee_balances",
+                "request_time_off",
+                "update_personal_info",
+                "get_personal_info",
+                "get_leave_requests",
+                "cancel_leave_request"
+            ]
+        }
     }
 
 
 @app.get("/api/me/profile")
-async def get_my_profile():
-    return await workweek_client.get_employee_profile("EMP-HL-001")
+async def get_my_profile(x_mcp_token: Optional[str] = Header(None)):
+    token = x_mcp_token or workweek_mcp.default_token
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    return await workweek_mcp.read_resource_profile(emp_res["employee_id"], token)
 
 
 @app.get("/api/me/balances")
-async def get_my_balances():
-    return await workweek_client.get_leave_balances("EMP-HL-001")
+async def get_my_balances(x_mcp_token: Optional[str] = Header(None)):
+    token = x_mcp_token or workweek_mcp.default_token
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    return await workweek_mcp.get_employee_balances(emp_res["employee_id"], token)
 
 
 @app.post("/api/chat")
-async def chat_interaction(req: ChatRequest):
-    """Processes interactive conversational message with WorkAgent."""
+async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header(None)):
+    token = req.mcp_token or x_mcp_token or workweek_mcp.default_token
     try:
         response = await orchestrator.process_user_message(
             user_id=req.user_id,
             message_text=req.message,
-            authenticated_employee_id="EMP-HL-001",
-            user_mcp_token=req.mcp_token
+            mcp_token=token
         )
         return response
     except Exception as e:
@@ -120,23 +115,21 @@ async def chat_interaction(req: ChatRequest):
 
 
 @app.post("/api/confirm")
-async def confirm_action(req: DirectConfirmRequest):
-    """Directly confirms and commits a staged action using the cryptographic token."""
-    if req.action == "submit_leave_request":
-        res = await submit_my_leave_request(
-            leave_type=req.payload.get("leave_type", "Vacation"),
+async def confirm_action(req: DirectConfirmRequest, x_mcp_token: Optional[str] = Header(None)):
+    token = req.mcp_token or x_mcp_token or workweek_mcp.default_token
+    if req.action in ["request_time_off", "submit_leave_request"]:
+        res = await submit_time_off_request(
+            leave_type=req.payload.get("leave_type", "vacation"),
             start_date=req.payload.get("start_date", ""),
             end_date=req.payload.get("end_date", ""),
-            half_day=req.payload.get("half_day", False),
-            note=req.payload.get("note", ""),
+            days=float(req.payload.get("days", 1.0)),
             confirmation_token=req.confirmation_token
         )
         return res
-    elif req.action == "update_contact_info":
-        res = await update_my_contact_info(
-            phone=req.payload.get("phone"),
-            address=req.payload.get("address"),
-            emergency_contact=req.payload.get("emergency_contact"),
+    elif req.action in ["update_personal_info", "update_contact_info"]:
+        res = await submit_personal_info_update(
+            address=req.payload.get("address", ""),
+            phone=req.payload.get("phone", ""),
             confirmation_token=req.confirmation_token
         )
         return res

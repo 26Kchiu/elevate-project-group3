@@ -1,19 +1,41 @@
-// WorkAgent Client Application Logic
+// Dynamic WorkAgent Client Logic
 
-const userId = "harrylin";
-let mcpToken = "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg";
+let activeEmployeeId = "";
 
 document.addEventListener("DOMContentLoaded", () => {
-  const tokenInput = document.getElementById("mcpTokenInput");
-  tokenInput.addEventListener("change", (e) => {
-    mcpToken = e.target.value.trim();
-    appendSystemMessage(`Updated MCP PAT token to: <code>${mcpToken.substring(0, 10)}...</code>`);
-  });
+  loadProfileFromToken();
 });
 
 function toggleTokenVisibility() {
   const input = document.getElementById("mcpTokenInput");
   input.type = input.type === "password" ? "text" : "password";
+}
+
+async function loadProfileFromToken() {
+  const token = document.getElementById("mcpTokenInput").value.trim();
+  document.getElementById("userName").innerText = "Resolving...";
+  document.getElementById("userRole").innerText = "Querying WorkWeek MCP...";
+
+  try {
+    const res = await fetch("/api/me/profile", {
+      headers: { "X-MCP-Token": token }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      activeEmployeeId = data.employee_id;
+      const initials = (data.first_name ? data.first_name[0] : "") + (data.last_name ? data.last_name[0] : (data.name ? data.name[0] : "U"));
+      document.getElementById("userAvatar").innerText = initials.toUpperCase() || "WW";
+      document.getElementById("userName").innerText = data.name || "Authenticated User";
+      document.getElementById("userRole").innerText = data.role || "Enterprise Member";
+      document.getElementById("userIdBadge").innerText = `${data.employee_id} • ${data.email}`;
+      appendSystemMessage(`Dynamic identity synced: <strong>${data.name} (${data.employee_id})</strong> via WorkWeek MCP.`);
+    } else {
+      document.getElementById("userName").innerText = "Session Active";
+      document.getElementById("userRole").innerText = "MCP Token Configured";
+    }
+  } catch (err) {
+    document.getElementById("userName").innerText = "WorkWeek User";
+  }
 }
 
 function sendQuickPrompt(text) {
@@ -41,15 +63,18 @@ async function handleFormSubmit(e) {
   sendBtn.disabled = true;
 
   const typingId = appendTypingIndicator();
+  const token = document.getElementById("mcpTokenInput").value.trim();
 
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-MCP-Token": token
+      },
       body: JSON.stringify({
-        user_id: userId,
         message: text,
-        mcp_token: document.getElementById("mcpTokenInput").value.trim()
+        mcp_token: token
       })
     });
 
@@ -95,7 +120,7 @@ function appendTypingIndicator() {
   const id = "typing-" + Date.now();
   row.id = id;
   row.className = "message-row agent";
-  row.innerHTML = `<div class="agent-bubble"><em>WorkAgent is querying WorkWeek SaaS with your token...</em></div>`;
+  row.innerHTML = `<div class="agent-bubble"><em>WorkAgent is querying WorkWeek MCP Server...</em></div>`;
   stream.appendChild(row);
   stream.scrollTop = stream.scrollHeight;
   return id;
@@ -114,21 +139,19 @@ function appendAgentResponse(data) {
   let formattedReply = formatMarkdown(data.reply);
   let html = `<div class="agent-bubble">${formattedReply}`;
 
-  // If tool calls were made, render structured SoR banner
   if (data.tool_calls && data.tool_calls.length > 0) {
     for (const tc of data.tool_calls) {
       html += `
         <div class="tool-call-card">
           <div class="tool-call-header">
-            <span>⚡ Tool Executed: ${escapeHtml(tc.name)}</span>
-            <span>WorkWeek HCM (Harry Lin Context)</span>
+            <span>⚡ MCP Tool: ${escapeHtml(tc.name)}</span>
+            <span>WorkWeek Server (/work-week/mcp/)</span>
           </div>
         </div>
       `;
     }
   }
 
-  // If a confirmation card was staged, render the interactive card
   if (data.confirmation_card) {
     const card = data.confirmation_card;
     const staged = card.staged_request || card.staged_update || {};
@@ -138,10 +161,11 @@ function appendAgentResponse(data) {
           <span>⚠️ Action Confirmation Required (SDD Section 4.2)</span>
         </div>
         <div class="confirm-details">
-          <div><strong>Action:</strong> ${escapeHtml(card.action_required || "Submit Leave")}</div>
-          <div><strong>Authenticated User:</strong> Harry Lin (EMP-HL-001)</div>
-          <div><strong>Leave Type:</strong> ${escapeHtml(staged.leave_type || "N/A")}</div>
+          <div><strong>Action:</strong> ${escapeHtml(card.action_required || "Book Time Off")}</div>
+          <div><strong>Employee ID:</strong> ${escapeHtml(staged.employee_id || activeEmployeeId)}</div>
+          <div><strong>Leave Type:</strong> ${escapeHtml(staged.leave_type || "vacation")}</div>
           <div><strong>Dates:</strong> ${escapeHtml(staged.start_date || "")} to ${escapeHtml(staged.end_date || "")}</div>
+          <div><strong>Days:</strong> ${escapeHtml(staged.days || 1)} days</div>
           <div class="confirm-token-badge">Token: ${escapeHtml(card.confirmation_token)} (SHA-256 bound)</div>
         </div>
         <div class="confirm-actions">
@@ -162,34 +186,39 @@ async function executeConfirmation(token, stagedJsonStr) {
   const staged = JSON.parse(stagedJsonStr);
   const cardElem = document.getElementById("card-" + token);
   if (cardElem) {
-    cardElem.innerHTML = `<div style="color: #10B981;"><em>Executing verified transaction with token ${token}...</em></div>`;
+    cardElem.innerHTML = `<div style="color: #10B981;"><em>Executing verified transaction via WorkWeek MCP Server...</em></div>`;
   }
 
-  appendUserMessage(`Confirming action with token ${token}`);
+  appendUserMessage(`Confirming transaction with token ${token}`);
+  const mcpTok = document.getElementById("mcpTokenInput").value.trim();
 
   try {
     const res = await fetch("/api/confirm", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-MCP-Token": mcpTok
+      },
       body: JSON.stringify({
-        action: "submit_leave_request",
+        action: "request_time_off",
         confirmation_token: token,
         payload: staged,
-        mcp_token: document.getElementById("mcpTokenInput").value.trim()
+        mcp_token: mcpTok
       })
     });
 
     const data = await res.json();
     if (data.receipt) {
       appendAgentMessage(`
-        ✅ <strong>Transaction Committed Successfully to WorkWeek HCM</strong><br>
-        • <strong>Reference ID:</strong> <code>${data.receipt.reference}</code><br>
+        ✅ <strong>Time-Off Request Committed via WorkWeek MCP Server</strong><br>
+        • <strong>Request ID:</strong> <code>${data.receipt.request_id}</code><br>
+        • <strong>Leave Type:</strong> ${data.receipt.leave_type}<br>
         • <strong>Days Deducted:</strong> ${data.receipt.days_deducted} days<br>
         • <strong>Remaining Balance:</strong> ${data.receipt.remaining_balance} days<br>
         • <strong>Committed At:</strong> ${data.receipt.committed_at}
       `);
     } else {
-      appendAgentMessage(`❌ Action failed: ${JSON.stringify(data)}`);
+      appendAgentMessage(`❌ Transaction failed: ${JSON.stringify(data)}`);
     }
   } catch (err) {
     appendAgentMessage(`❌ Confirmation error: ${err.message}`);
@@ -217,7 +246,7 @@ function clearChat() {
   stream.innerHTML = `
     <div class="message-row system">
       <div class="system-bubble">
-        Chat cleared. Ready for new inquiries for <strong>Harry Lin</strong>.
+        Chat cleared. Ready for new inquiries via WorkWeek MCP.
       </div>
     </div>
   `;

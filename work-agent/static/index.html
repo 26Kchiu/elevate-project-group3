@@ -17,34 +17,14 @@
         <div class="brand-logo">WW</div>
         <div class="brand-info">
           <h2>WorkAgent</h2>
-          <span class="badge badge-primary">WorkWeek HCM</span>
-        </div>
-      </div>
-
-      <!-- Authenticated User Profile -->
-      <div class="section-title">AUTHENTICATED IDENTITY (IAM)</div>
-      <div class="employee-card">
-        <div class="emp-avatar">HL</div>
-        <div class="emp-details">
-          <div class="emp-name">Harry Lin</div>
-          <div class="emp-title">Customer Engineer / Architect</div>
-          <div class="emp-id">harrylin@google.com &bull; EMP-HL-001</div>
-        </div>
-      </div>
-
-      <!-- Subject Isolation Policy Chip -->
-      <div class="isolation-notice">
-        <span class="lock-icon">🔒</span>
-        <div>
-          <strong>Subject Isolation Enforced</strong>
-          <p>Access is restricted strictly to your own records (ADR-005). Cross-user access is blocked.</p>
+          <span class="badge badge-primary">WorkWeek MCP</span>
         </div>
       </div>
 
       <!-- MCP Personal Access Token (PAT) Configuration -->
-      <div class="section-title">YOUR MCP PERSONAL ACCESS TOKEN</div>
+      <div class="section-title">MCP PERSONAL ACCESS TOKEN</div>
       <div class="token-config-box">
-        <label for="mcpTokenInput">Personal Token (PAT):</label>
+        <label for="mcpTokenInput">User Token (PAT):</label>
         <div class="token-input-wrapper">
           <input
             type="password"
@@ -54,27 +34,49 @@
           />
           <button type="button" class="btn-toggle-token" onclick="toggleTokenVisibility()">👁️</button>
         </div>
-        <small class="token-hint">Bound to your WorkWeek user identity</small>
+        <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 6px;" onclick="loadProfileFromToken()">
+          🔄 Sync Identity from SaaS
+        </button>
+      </div>
+
+      <!-- Dynamic Authenticated User Profile (Fetched from WorkWeek MCP) -->
+      <div class="section-title">DYNAMIC SAAS IDENTITY</div>
+      <div class="employee-card" id="userCard">
+        <div class="emp-avatar" id="userAvatar">...</div>
+        <div class="emp-details">
+          <div class="emp-name" id="userName">Resolving...</div>
+          <div class="emp-title" id="userRole">WorkWeek SaaS Profile</div>
+          <div class="emp-id" id="userIdBadge">Resolving Session...</div>
+        </div>
+      </div>
+
+      <!-- Subject Isolation Policy Notice -->
+      <div class="isolation-notice">
+        <span class="lock-icon">🔒</span>
+        <div>
+          <strong>Subject Isolation Active</strong>
+          <p>Session dynamically locked to your resolved employee ID (ADR-005). Cross-user access blocked.</p>
+        </div>
       </div>
 
       <div class="section-title">QUICK ACTIONS</div>
       <div class="quick-actions">
-        <button class="action-btn" onclick="sendQuickPrompt('What are my current leave balances in WorkWeek?')">
-          <span>📊</span> Check My Leave Balances
+        <button class="action-btn" onclick="sendQuickPrompt('What are my current remaining vacation and sick leave balances in WorkWeek?')">
+          <span>📊</span> Check Leave Balances
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('Show me my complete employee profile and contact details.')">
+        <button class="action-btn" onclick="sendQuickPrompt('Show me my complete employee metadata profile and contact details.')">
           <span>👤</span> View My Profile
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('I would like to request 3 days of sick leave starting 2026-09-01 to 2026-09-03 for medical rest.')">
+        <button class="action-btn" onclick="sendQuickPrompt('I need to request 3 days of sick leave starting 2026-09-01 to 2026-09-03.')">
           <span>🩺</span> Request Sick Leave
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('I need to take 5 days of vacation leave from 2026-10-12 to 2026-10-16 for holiday.')">
+        <button class="action-btn" onclick="sendQuickPrompt('I would like to book 5 days of vacation leave starting 2026-10-12 to 2026-10-16.')">
           <span>✈️</span> Request Vacation Leave
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('Please check the status of my previous leave requests.')">
-          <span>📜</span> View Leave History
+        <button class="action-btn" onclick="sendQuickPrompt('Show me the history of all my requested time off in WorkWeek.')">
+          <span>📜</span> View Leave Requests History
         </button>
-        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('What is Alex Rivera's leave balance and salary?')">
+        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('What is Alex Rivera's leave balance and home address?')">
           <span>🚫</span> Test Cross-User Access (Blocked)
         </button>
       </div>
@@ -82,8 +84,8 @@
       <div class="service-status">
         <div class="status-indicator online"></div>
         <div class="status-text">
-          <div class="status-title">WorkWeek SaaS Service</div>
-          <div class="status-sub">MCP Connected (User Token Bound)</div>
+          <div class="status-title">WorkWeek MCP Server</div>
+          <div class="status-sub">/work-week/mcp/ (Active)</div>
         </div>
       </div>
     </aside>
@@ -94,11 +96,11 @@
       <header class="chat-header">
         <div class="header-left">
           <h1>WorkWeek HCM Virtual Assistant</h1>
-          <p class="subtitle">Authenticated Session for <strong>Harry Lin (harrylin@google.com)</strong></p>
+          <p class="subtitle">Interfacing with WorkWeek Server (<code>/work-week/mcp/</code>)</p>
         </div>
         <div class="header-right">
           <span class="security-chip">
-            <span class="icon">🛡️</span> Zero-Trust Identity Injected
+            <span class="icon">🛡️</span> Dynamic MCP Session
           </span>
           <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
         </div>
@@ -108,7 +110,7 @@
       <div class="chat-stream" id="chatStream">
         <div class="message-row system">
           <div class="system-bubble">
-            👋 Welcome <strong>Harry Lin</strong>! WorkAgent is connected to <strong>WorkWeek HCM</strong> with your user token. You can inquire about your leave balances, view your profile, or submit leave requests with cryptographic confirm-before-commit verification.
+            ✨ WorkAgent is connected to <strong>WorkWeek MCP Server</strong>. Your session is authenticated via your PAT token.
           </div>
         </div>
       </div>
@@ -119,7 +121,7 @@
           <textarea
             id="messageInput"
             rows="1"
-            placeholder="Ask about your leave balances, profile, or request time off..."
+            placeholder="Ask about your leave balances, profile metadata, or request time off..."
             onkeydown="handleKeyDown(event)"
           ></textarea>
           <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
@@ -131,7 +133,7 @@
           </button>
         </form>
         <div class="composer-footnote">
-          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini</strong> &bull; WorkWeek MCP SaaS Gateway
+          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini</strong> &bull; WorkWeek Server MCP
         </div>
       </footer>
     </main>

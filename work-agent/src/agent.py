@@ -1,7 +1,7 @@
 """
-WorkAgent Definition & Tool Implementations (Google ADK).
-Follows SDD Section 3.1, 3.3, and ADR-005 (Subject Isolation & Zero-Trust Identity Injection).
-Powered by Gemini on Google ADK.
+WorkAgent Definition & Tool Implementations (Google ADK & Gemini).
+Connects to WorkWeek MCP Server (/work-week/mcp/) with dynamic session token resolution,
+Confirm-Before-Commit gating (SDD Section 4.2), and strict subject isolation (ADR-005).
 """
 
 import asyncio
@@ -12,14 +12,12 @@ import os
 import subprocess
 from typing import Any, Dict, Optional
 
-# Disable mTLS if certs are missing in sandbox
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "true"
 os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
 os.environ["GOOGLE_CLOUD_LOCATION"] = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
-# Patch google.auth.default dynamically to ensure valid gcloud token is used
 import google.auth
 from google.oauth2.credentials import Credentials
 
@@ -42,94 +40,88 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from src.security import confirmation_manager
-from src.workweek_service import workweek_client
+from src.workweek_service import workweek_mcp
 
 logger = logging.getLogger(__name__)
 
-# Active session context storage: session_id -> {employee_id, user_id, mcp_token}
-_SESSION_CONTEXT: Dict[str, Dict[str, Any]] = {}
+# Active session context store: session_id -> {token, employee_id}
+_SESSION_TOKENS: Dict[str, str] = {}
 
-def set_session_context(session_id: str, employee_id: str, user_id: str, mcp_token: str):
-    _SESSION_CONTEXT[session_id] = {
-        "employee_id": employee_id,
-        "user_id": user_id,
-        "mcp_token": mcp_token
-    }
 
-def get_current_employee_id() -> str:
-    """Returns the authenticated employee ID for the active context (default Harry Lin EMP-HL-001)."""
-    return "EMP-HL-001"
+def set_active_session_token(session_id: str, token: str):
+    _SESSION_TOKENS[session_id] = token
+
+
+def get_active_session_token(session_id: Optional[str] = None) -> str:
+    if session_id and session_id in _SESSION_TOKENS:
+        return _SESSION_TOKENS[session_id]
+    return workweek_mcp.default_token
 
 
 # =====================================================================
-# ADK Tool Definitions with Subject Isolation (SDD ADR-005)
+# ADK Domain Tools (Calling WorkWeek MCP Capabilities)
 # =====================================================================
 
-async def get_my_employee_profile() -> Dict[str, Any]:
-    """Retrieves the official employee profile for the currently authenticated user (Harry Lin).
-
-    Returns name, email, role, department, tenure, manager, location, and contact information.
-    """
-    emp_id = get_current_employee_id()
-    return await workweek_client.get_employee_profile(emp_id)
+async def get_my_profile() -> Dict[str, Any]:
+    """Retrieves official employee profile metadata (name, email, role, home address, phone number, manager ID) from WorkWeek MCP."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
+    return await workweek_mcp.read_resource_profile(emp_id, token)
 
 
 async def get_my_leave_balances() -> Dict[str, Any]:
-    """Retrieves live leave balances (Vacation, Sick, Medical, Bereavement, Study) for the authenticated user (Harry Lin).
-
-    Returns exact available, accrued, and taken days with timestamp.
-    """
-    emp_id = get_current_employee_id()
-    return await workweek_client.get_leave_balances(emp_id)
-
-
-async def get_my_leave_request_status(request_id: Optional[str] = None) -> Dict[str, Any]:
-    """Looks up the status of past or active leave requests for the authenticated user (Harry Lin).
-
-    Args:
-        request_id: Optional reference ID (e.g. 'LR-2026-009120'). If omitted, returns all recent requests.
-    """
-    emp_id = get_current_employee_id()
-    return await workweek_client.get_leave_request_status(emp_id, request_id)
+    """Fetches remaining and used vacation and sick leave balances from WorkWeek MCP."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
+    return await workweek_mcp.get_employee_balances(emp_id, token)
 
 
-async def stage_my_leave_request(
+async def get_my_leave_requests() -> Dict[str, Any]:
+    """Fetches the history of all requested time off (leave requests) from WorkWeek MCP."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
+    return await workweek_mcp.get_leave_requests(emp_id, token)
+
+
+async def stage_time_off_request(
     leave_type: str,
     start_date: str,
     end_date: str,
-    half_day: bool = False,
-    note: str = ""
+    days: float
 ) -> Dict[str, Any]:
-    """Stages a new leave request for the authenticated user (Harry Lin) and mints a single-use confirmation token.
+    """Stages a new time-off booking and mints a single-use cryptographically bound confirmation token (SDD Section 4.2).
 
-    MUST be called before submitting any leave request to present a review card with cryptographic payload hash.
+    MUST be called before executing request_time_off to generate a review card with dates, days, and token.
     Args:
-        leave_type: 'Vacation', 'Sick', 'Medical', 'Bereavement', or 'Study'.
-        start_date: Absolute date in YYYY-MM-DD format.
-        end_date: Absolute date in YYYY-MM-DD format.
-        half_day: Whether this is a half-day request.
-        note: Optional reason or memo.
+        leave_type: 'vacation' or 'sick'.
+        start_date: Start date in YYYY-MM-DD format (must not be in past).
+        end_date: End date in YYYY-MM-DD format (must not be before start_date).
+        days: Total working days requested (e.g. 1.0, 3.0, 5.0).
     """
-    emp_id = get_current_employee_id()
-    bal_res = await workweek_client.get_leave_balances(emp_id)
-    type_key = leave_type.lower()
-    balances = bal_res.get("balances", {})
-    available = 999.0
-    if type_key in balances and "available" in balances[type_key]:
-        available = balances[type_key]["available"]
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
+
+    # Pre-validate balances from MCP
+    bal_res = await workweek_mcp.get_employee_balances(emp_id, token)
+    norm_type = leave_type.lower()
+    rem_key = f"{norm_type}_remaining"
+    remaining = bal_res.get("balances", {}).get(rem_key, 0.0)
 
     payload = {
         "employee_id": emp_id,
-        "leave_type": leave_type,
+        "leave_type": norm_type,
         "start_date": start_date,
         "end_date": end_date,
-        "half_day": half_day,
-        "note": note
+        "days": days
     }
 
     token_info = confirmation_manager.mint_token(
         employee_id=emp_id,
-        action="submit_leave_request",
+        action="request_time_off",
         payload=payload,
         ttl_seconds=300
     )
@@ -141,77 +133,64 @@ async def stage_my_leave_request(
         "payload_hash": token_info["payload_hash"],
         "expires_at": token_info["expires_at"],
         "staged_request": payload,
-        "current_available_balance": available,
-        "instruction": "Present the structured confirmation card to the user. Ask them to review and confirm."
+        "current_available_balance": remaining,
+        "instruction": "Present the confirmation card to the user with leave type, start/end dates, total days, and confirmation token. Ask them to confirm."
     }
 
 
-async def submit_my_leave_request(
+async def submit_time_off_request(
     leave_type: str,
     start_date: str,
     end_date: str,
-    confirmation_token: str,
-    idempotency_key: str = "",
-    half_day: bool = False,
-    note: str = ""
+    days: float,
+    confirmation_token: str
 ) -> Dict[str, Any]:
-    """Submits an official leave request in WorkWeek HCM upon verifying the cryptographic confirmation token.
+    """Submits the official time-off booking in WorkWeek MCP upon verifying the cryptographic confirmation token."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
 
-    Requires an unexpired, unconsumed confirmation token bound to the authenticated user's payload hash.
-    """
-    emp_id = get_current_employee_id()
     record_check = confirmation_manager._tokens.get(confirmation_token)
     if not record_check:
-        return {
-            "error": "404_CONFIRMATION_INVALID",
-            "message": "The confirmation token provided is invalid or does not exist."
-        }
+        return {"error": "404_CONFIRMATION_INVALID", "message": "Confirmation token is invalid or does not exist."}
 
     inbound_payload = {
         "employee_id": emp_id,
-        "leave_type": leave_type,
+        "leave_type": leave_type.lower(),
         "start_date": start_date,
         "end_date": end_date,
-        "half_day": half_day,
-        "note": note
+        "days": days
     }
 
     valid, reason, record = confirmation_manager.verify_and_consume(confirmation_token, inbound_payload)
     if not valid:
-        return {
-            "error": "409_CONFIRMATION_FAILED",
-            "message": reason
-        }
+        return {"error": "409_CONFIRMATION_FAILED", "message": reason}
 
-    result = await workweek_client.submit_leave_request(
+    return await workweek_mcp.request_time_off(
         employee_id=emp_id,
-        leave_type=leave_type,
         start_date=start_date,
         end_date=end_date,
-        half_day=half_day,
-        note=note,
-        idempotency_key=idempotency_key or f"IDEMP-{confirmation_token}"
+        leave_type=leave_type,
+        days=days,
+        token=token
     )
-    return result
 
 
-async def stage_my_contact_update(
-    phone: Optional[str] = None,
-    address: Optional[str] = None,
-    emergency_contact: Optional[str] = None
-) -> Dict[str, Any]:
-    """Stages a contact information update for the authenticated user and mints a confirmation token."""
-    emp_id = get_current_employee_id()
+async def stage_personal_info_update(address: str, phone: str) -> Dict[str, Any]:
+    """Stages an update to home address and phone number, minting a confirmation token."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
+
     payload = {
         "employee_id": emp_id,
-        "phone": phone or "",
-        "address": address or "",
-        "emergency_contact": emergency_contact or ""
+        "address": address,
+        "phone": phone
     }
 
     token_info = confirmation_manager.mint_token(
         employee_id=emp_id,
-        action="update_contact_info",
+        action="update_personal_info",
         payload=payload,
         ttl_seconds=300
     )
@@ -226,79 +205,75 @@ async def stage_my_contact_update(
     }
 
 
-async def update_my_contact_info(
-    phone: Optional[str] = None,
-    address: Optional[str] = None,
-    emergency_contact: Optional[str] = None,
-    confirmation_token: str = ""
-) -> Dict[str, Any]:
-    """Executes a contact info update upon verifying the confirmation token."""
-    emp_id = get_current_employee_id()
-    record_check = confirmation_manager._tokens.get(confirmation_token)
-    if not record_check:
-        return {"error": "404_CONFIRMATION_INVALID", "message": "Confirmation token is invalid or missing."}
+async def submit_personal_info_update(address: str, phone: str, confirmation_token: str) -> Dict[str, Any]:
+    """Commits updated personal info to WorkWeek MCP upon verifying confirmation token."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
 
     inbound_payload = {
         "employee_id": emp_id,
-        "phone": phone or "",
-        "address": address or "",
-        "emergency_contact": emergency_contact or ""
+        "address": address,
+        "phone": phone
     }
 
     valid, reason, record = confirmation_manager.verify_and_consume(confirmation_token, inbound_payload)
     if not valid:
         return {"error": "409_CONFIRMATION_FAILED", "message": reason}
 
-    result = await workweek_client.update_contact_info(
+    return await workweek_mcp.update_personal_info(
         employee_id=emp_id,
-        phone=phone or None,
-        address=address or None,
-        emergency_contact=emergency_contact or None
+        address=address,
+        phone=phone,
+        token=token
     )
-    return result
+
+
+async def cancel_time_off_request(request_id: str) -> Dict[str, Any]:
+    """Cancels a pending or approved leave request and refunds days in WorkWeek MCP."""
+    token = get_active_session_token()
+    emp_res = await workweek_mcp.get_current_employee_id(token)
+    emp_id = emp_res["employee_id"]
+    return await workweek_mcp.cancel_leave_request(emp_id, request_id, token)
 
 
 # =====================================================================
-# WorkAgent System Prompt & Instructions (Subject Isolation Strict)
+# WorkAgent System Prompt (Zero Hardcoding & Subject Isolation)
 # =====================================================================
 
 WORKAGENT_SYSTEM_INSTRUCTION = """
-You are **WorkAgent**, the dedicated Enterprise HCM Specialist Agent for WorkWeek SaaS.
-You are currently interacting with **Harry Lin** (Employee ID: **EMP-HL-001**, Email: **harrylin@google.com**).
+You are **WorkAgent**, the Enterprise HCM Specialist Agent interfacing directly with the **WorkWeek MCP Server (/work-week/mcp/)**.
 
-**CRITICAL SECURITY & ACCESS CONTROL RULES (SDD ADR-005 & TC-SEC-02):**
-1. **Strict Subject Isolation:** You MUST ONLY query and manipulate records for the authenticated user, **Harry Lin** (EMP-HL-001).
-2. **Rejection of Cross-User Access:** If the user asks about ANY other employee (e.g. "What is Sarah Chen's balance?", "Show Alex Rivera's profile", "Query EMP-002", "Who has the highest leave?"), you MUST IMMEDIATELY REFUSE with:
-   "Access Denied (ADR-005 Subject Isolation): Under enterprise zero-trust access policy, you are only authorized to access your own employee records (Harry Lin). Access to other employees' records is strictly restricted."
-   Do NOT call any tool for other employees.
-3. **Confirm-Before-Commit for Writes:**
-   - When Harry requests leave, ALWAYS call `stage_my_leave_request` first. Present the review card with Token and dates.
-   - Only call `submit_my_leave_request` when Harry explicitly confirms or provides the confirmation token.
-4. **Grounded System-of-Record Answers:**
-   - Always state exact values directly returned from the tools and include timestamps. Never invent numbers.
+**OPERATING INSTRUCTIONS:**
+1. **Dynamic Authentication:** The user session is authenticated via their MCP token. All tool calls automatically resolve the user's `employee_id` from the WorkWeek MCP service. Never hardcode or assume an employee name or ID.
+2. **Subject Isolation (SDD ADR-005):** You are strictly authorized to query and modify records for the currently authenticated employee. If the user asks for ANY other employee's balances, profile, or records, you MUST REFUSE:
+   "Access Denied (Subject Isolation Policy): Under enterprise zero-trust security, you are only authorized to view and manage your own employee records."
+3. **Confirm-Before-Commit Protocol:**
+   - When the user asks to book time off, ALWAYS call `stage_time_off_request` first to validate dates, days, and mint a confirmation token.
+   - Present the Action Review Card to the user with dates, total days, and confirmation token.
+   - Only call `submit_time_off_request` when the user confirms.
+4. **Accurate Fact Grounding:** State exact figures directly returned by the WorkWeek MCP tools with timestamps.
 """
 
 def create_work_agent(model_name: str = "gemini-2.5-flash") -> LlmAgent:
-    """Factory function to instantiate WorkAgent with bound self-only tools."""
     return LlmAgent(
         name="work_agent",
         model=model_name,
         instruction=WORKAGENT_SYSTEM_INSTRUCTION.strip(),
         tools=[
-            get_my_employee_profile,
+            get_my_profile,
             get_my_leave_balances,
-            get_my_leave_request_status,
-            stage_my_leave_request,
-            submit_my_leave_request,
-            stage_my_contact_update,
-            update_my_contact_info
+            get_my_leave_requests,
+            stage_time_off_request,
+            submit_time_off_request,
+            stage_personal_info_update,
+            submit_personal_info_update,
+            cancel_time_off_request
         ]
     )
 
 
 class WorkAgentOrchestrator:
-    """High-level orchestrator managing sessions and user dialogue."""
-
     def __init__(self, model_name: str = "gemini-2.5-flash"):
         self.agent = create_work_agent(model_name=model_name)
         self.session_service = InMemorySessionService()
@@ -316,19 +291,15 @@ class WorkAgentOrchestrator:
         self,
         user_id: str,
         message_text: str,
-        authenticated_employee_id: str = "EMP-HL-001",
-        user_mcp_token: Optional[str] = None
+        mcp_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Processes user message with injected identity and user MCP PAT token."""
         session_id = await self.get_or_create_session(user_id)
+        token = mcp_token or workweek_mcp.default_token
+        set_active_session_token(session_id, token)
 
-        # Store session context
-        set_session_context(
-            session_id=session_id,
-            employee_id=authenticated_employee_id,
-            user_id=user_id,
-            mcp_token=user_mcp_token or workweek_client.mcp_token
-        )
+        # Resolve employee session from MCP dynamically
+        emp_res = await workweek_mcp.get_current_employee_id(token)
+        emp_id = emp_res["employee_id"]
 
         content = types.Content(
             role="user",
@@ -358,17 +329,13 @@ class WorkAgentOrchestrator:
                             "name": fr.name,
                             "response": resp_data
                         })
-                        if fr.name in ["stage_my_leave_request", "stage_my_contact_update"] and resp_data.get("status") == "STAGED_AWAITING_CONFIRMATION":
+                        if fr.name in ["stage_time_off_request", "stage_personal_info_update"] and resp_data.get("status") == "STAGED_AWAITING_CONFIRMATION":
                             confirmation_card = resp_data
 
         return {
             "session_id": session_id,
             "user_id": user_id,
-            "authenticated_employee": {
-                "name": "Harry Lin",
-                "employee_id": authenticated_employee_id,
-                "email": "harrylin@google.com"
-            },
+            "authenticated_employee_id": emp_id,
             "reply": final_text.strip(),
             "tool_calls": tool_calls,
             "tool_responses": tool_responses,
@@ -377,5 +344,4 @@ class WorkAgentOrchestrator:
         }
 
 
-# Global orchestrator singleton
 orchestrator = WorkAgentOrchestrator()
