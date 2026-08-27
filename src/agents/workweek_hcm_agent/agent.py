@@ -22,13 +22,15 @@ os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 from .prompts import DEFAULT_EMPLOYEE_ID, get_system_instruction
 from .tools import DEFAULT_MCP_TOKEN, DEFAULT_MCP_URL
 
+DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.7-flash")
+
 
 class WorkWeekHCMAgent:
     """Sub-agent responsible for WorkWeek HCM operations (balances, profile, time-off requests)."""
 
     def __init__(
         self,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = DEFAULT_MODEL_NAME,
         mcp_url: str = DEFAULT_MCP_URL,
         mcp_token: str = DEFAULT_MCP_TOKEN,
         employee_id: str = DEFAULT_EMPLOYEE_ID,
@@ -148,6 +150,7 @@ class WorkWeekHCMAgent:
 
                     return {
                         "agent_name": self.name,
+                        "model": self.model_name,
                         "reply": reply_text,
                         "employee_id": active_emp_id,
                         "tool_calls": tool_calls_record,
@@ -164,6 +167,7 @@ class WorkWeekHCMAgent:
         result_payload = await self.run(user_prompt=task, employee_id=emp_id, mcp_token=mcp_tok)
         return {
             "agent_name": self.name,
+            "model": self.model_name,
             "result": result_payload["reply"],
             "tool_calls": result_payload["tool_calls"],
             "tool_responses": result_payload["tool_responses"],
@@ -173,9 +177,9 @@ class WorkWeekHCMAgent:
 
 async def main():
     agent = WorkWeekHCMAgent()
-    # Test Scenario: Query employee's leave balances
+    # Test Scenario: Query employee's leave balances with gemini-3.7-flash
     result = await agent.run("請問我目前的特休與病假剩餘天數是多少？")
-    print(f"\nFinal Result:\n{result['reply']}")
+    print(f"\nFinal Result from {agent.model_name}:\n{result['reply']}")
 
 
 if __name__ == "__main__":
