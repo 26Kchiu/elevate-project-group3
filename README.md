@@ -1,117 +1,81 @@
-# Elevate Project Group 3 - HR System
+# Elevate Project Group 3 — HR Multi-Agent System & Policy Knowledge Engine
 
-Welcome to the **Elevate Project Group 3 HR System** repository. This project implements an intelligent multi-agent HR assistant designed to streamline employee HR interactions, policy inquiries, human capital management (HCM) operations, and service desk ticketing.
+[![Architecture: BigQuery Graph + Google ADK](https://img.shields.io/badge/Architecture-BigQuery_GQL_Graph-blue.svg)](https://cloud.google.com/bigquery)
+[![Model: Gemini 3.7 Flash](https://img.shields.io/badge/Model-Gemini_3.7_Flash-purple.svg)](https://deepmind.google/technologies/gemini/)
+[![Project: elevate-taiwan-cohort-2](https://img.shields.io/badge/GCP_Project-elevate--taiwan--cohort--2-green.svg)](https://console.cloud.google.com/bigquery?project=elevate-taiwan-cohort-2)
 
----
-
-## 📄 System Design Document (SDD)
-
-For detailed architectural specifications, data flows, and design rationale, please refer to the official System Design Document:
-- 🔗 **[Elevate Project Group 3 SDD](https://docs.google.com/document/d/1xqh9OOcFJKYSywvI29MHQhwpdofpCaAF8td4-StcCtI/edit?tab=t.0)**
+This repository contains the **Elevate Project Group 3 HR Multi-Agent System**, featuring a deterministic **Policy Knowledge Agent** backed by a live **BigQuery Property Graph (GQL)** in Google Cloud project `elevate-taiwan-cohort-2`.
 
 ---
 
-## 🏛️ Architecture Overview
-
-The system is built on a multi-agent orchestration architecture featuring a centralized Master Agent and three specialized Sub-Agents:
-
-```
-                          ┌──────────────────────────┐
-                          │    Root Orchestrator     │
-                          │      (Master Agent)      │
-                          └─────────────┬────────────┘
-                                        │
-           ┌────────────────────────────┼────────────────────────────┐
-           │                            │                            │
-           ▼                            ▼                            ▼
-┌────────────────────┐       ┌────────────────────┐       ┌────────────────────┐
-│    Policy Agent    │       │ WorkWeek HCM Agent │       │ServiceImmediately  │
-│    (Sub-Agent)     │       │    (Sub-Agent)     │       │       Agent        │
-└──────────┬─────────┘       └──────────┬─────────┘       └──────────┬─────────┘
-           │                            │                            │
-           ▼                            ▼                            ▼
-┌────────────────────┐       ┌────────────────────┐       ┌────────────────────┐
-│   Policy Service   │       │    WorkWeek HCM    │       │ServiceImmediately  │
-│     MCP Server     │       │     MCP Server     │       │     MCP Server     │
-└────────────────────┘       └────────────────────┘       └────────────────────┘
-```
-
-### 1. Master Agent: Root Orchestrator
-- **Role:** Central entry point and coordinator for all user requests.
-- **Responsibilities:**
-  - Analyzes user intent, context, and conversation history.
-  - Deconstructs complex, multi-step requests into actionable sub-tasks.
-  - Dynamically routes requests to appropriate sub-agents (Policy Agent, WorkWeek HCM Agent, ServiceImmediately Agent).
-  - Synthesizes findings and actions from sub-agents into a unified, coherent response to the user.
-
-### 2. Specialized Sub-Agents
-
-| Sub-Agent | Scope & Responsibilities | Key Capabilities / Tools |
-| :--- | :--- | :--- |
-| **Policy Agent** | Company policies, compliance, HR handbooks, benefits guidelines, and FAQs. | Policy knowledge search, RAG retrieval, policy clause verification. |
-| **WorkWeek HCM Agent** | Core Human Capital Management (HCM) interactions and employee records. | Fetch employee profile, query leave/PTO balance, submit time-off requests, look up org charts. |
-| **ServiceImmediately Agent** | HR and IT service desk workflows and ticketing. | Create support tickets, check ticket status, update incident records, track resolution progress. |
-
----
-
-## 📁 Repository & Folder Structure
+## 1. Project Architecture
 
 ```
 elevate-project-group3/
-├── README.md                                  # Project overview and SDD documentation
-└── src/
-    ├── __init__.py                            # Main src package
-    ├── main.py                                # System entrypoint
-    ├── agents/                                # Agent definitions and logic
-    │   ├── __init__.py
-    │   ├── root_orchestrator/                 # Master Orchestrator Agent
-    │   │   ├── __init__.py
-    │   │   ├── agent.py                       # Root orchestrator agent implementation
-    │   │   └── prompts.py                     # Orchestration prompts and routing instructions
-    │   ├── policy_agent/                      # Policy Sub-Agent
-    │   │   ├── __init__.py
-    │   │   ├── agent.py                       # Policy agent implementation
-    │   │   ├── prompts.py                     # Policy guidelines and persona prompts
-    │   │   └── tools.py                       # Knowledge base search and retrieval tools
-    │   ├── workweek_hcm_agent/                # WorkWeek HCM Sub-Agent
-    │   │   ├── __init__.py
-    │   │   ├── agent.py                       # WorkWeek HCM agent implementation
-    │   │   ├── prompts.py                     # HCM agent prompts
-    │   │   └── tools.py                       # HCM tools (PTO balance, time-off, profiles)
-    │   └── service_immediately_agent/         # ServiceImmediately Sub-Agent
-    │       ├── __init__.py
-    │       ├── agent.py                       # ServiceImmediately agent implementation
-    │       ├── prompts.py                     # Ticketing and service desk prompts
-    │       └── tools.py                       # Service desk tools (ticket creation, status)
-    ├── mcp_servers/                           # Model Context Protocol (MCP) servers
-    │   ├── __init__.py
-    │   ├── policy_service/                    # Policy RAG MCP Server
-    │   │   ├── __init__.py
-    │   │   └── server.py
-    │   ├── workweek_hcm/                      # WorkWeek HCM MCP Server
-    │   │   ├── __init__.py
-    │   │   └── server.py
-    │   └── service_immediately/              # ServiceImmediately MCP Server
-    │       ├── __init__.py
-    │       └── server.py
-    └── shared/                                # Shared models, schemas, and configurations
-        ├── __init__.py
-        ├── config.py                          # Environment and model configurations
-        └── models.py                          # Data models and request/response schemas
+├── README.md
+├── src/
+│   ├── main.py                         # System entrypoint
+│   ├── shared/
+│   │   ├── config.py                   # BigQuery dataset & model configuration
+│   │   └── models.py                   # Pydantic data models
+│   ├── agents/
+│   │   ├── root_orchestrator/          # Master coordination agent
+│   │   ├── policy_agent/               # Grounded Policy Reasoning Agent (3-Way Policy)
+│   │   │   ├── agent.py
+│   │   │   ├── prompts.py
+│   │   │   └── tools.py
+│   │   ├── workweek_hcm_agent/         # WorkWeek HCM sub-agent
+│   │   └── service_immediately_agent/  # ServiceImmediately ITSM sub-agent
+│   ├── mcp_servers/
+│   │   ├── policy_service/             # Policy MCP Server for BigQuery Graph
+│   │   │   └── server.py
+│   │   ├── workweek_hcm/               # WorkWeek MCP Server
+│   │   └── service_immediately/        # ServiceImmediately MCP Server
+│   └── knowledge/                      # BigQuery Knowledge Management Layer
+│       ├── graph_service.py            # BigQuery GQL & Vector engine
+│       ├── curation_gate.py            # Human Curation Gate (Bands A-D)
+│       ├── corpus/                     # Altostrat Singapore Handbook corpus & graph
+│       └── ddl/                        # BigQuery SQL DDL for Nodes, Edges, & Graph
+├── eval/                               # Golden Evaluation Benchmark (155 cases)
+│   ├── evalset.json
+│   └── eval_runner.py
+├── tests/                              # Unit & Integration Tests (100% passing)
+│   ├── test_policy_agent.py
+│   └── test_curation_gate.py
+└── infra/                              # Terraform Infrastructure as Code
+    ├── main.tf
+    ├── bigquery.tf
+    └── variables.tf
 ```
 
 ---
 
-## 🚀 Getting Started
+## 2. Deployed BigQuery Knowledge Layer (`elevate-taiwan-cohort-2`)
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/26Kchiu/elevate-project-group3.git
-   cd elevate-project-group3
-   ```
+The BigQuery Knowledge Engine is live in the **US multi-region** under project `elevate-taiwan-cohort-2`:
 
-2. **Explore Agents:**
-   - Root Orchestrator: `src/agents/root_orchestrator/agent.py`
-   - Policy Agent: `src/agents/policy_agent/agent.py`
-   - WorkWeek HCM Agent: `src/agents/workweek_hcm_agent/agent.py`
-   - ServiceImmediately Agent: `src/agents/service_immediately_agent/agent.py`
+| Object | Type | Count | Description |
+| :--- | :--- | :---: | :--- |
+| `hr_knowledge.node_clause` | Node Table | 21 | Verbatim handbook policy statements |
+| `hr_knowledge.node_entitlement` | Node Table | 17 | Benefit allowances (sick, vacation, childcare, etc.) |
+| `hr_knowledge.node_condition` | Node Table | 9 | Predicate rules (tenure, child age limits) |
+| `hr_knowledge.node_term` | Node Table | 4 | Glossary definitions |
+| `hr_knowledge.edge_grants` | Edge Table | 17 | Maps clauses to granted entitlements |
+| `hr_knowledge.edge_subject_to` | Edge Table | 9 | Maps entitlements to condition predicates |
+| `hr_knowledge.edge_uses_term` | Edge Table | 4 | Maps clauses to glossary terms |
+| `hr_knowledge.hr_policy_graph` | Property Graph | LIVE | BigQuery GQL Property Graph definition |
+| `hr_analytics.audit_events_v1` | Partitioned Table | LIVE | Immutable audit log partitioned by date |
+
+---
+
+## 3. Running Evaluation Benchmark & Unit Tests
+
+### Run the Evaluation Benchmark:
+```bash
+python3 -m eval.eval_runner
+```
+
+### Run Unit Tests:
+```bash
+python3 -m unittest discover -s tests
+```
