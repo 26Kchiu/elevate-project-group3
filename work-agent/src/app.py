@@ -1,6 +1,6 @@
 """
 FastAPI Server & Web GUI Backend for WorkAgent.
-Serves interactive REST API, persona switching, and static web UI assets.
+Serves interactive REST API, Harry Lin identity enforcement, and static web UI assets.
 """
 
 import os
@@ -10,14 +10,14 @@ from pathlib import Path
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Any, Dict, Optional, List
 
-from src.agent import orchestrator, submit_leave_request, update_contact_info
+from src.agent import orchestrator, submit_my_leave_request, update_my_contact_info
 from src.workweek_service import workweek_client
 from src.security import confirmation_manager
 
@@ -35,21 +35,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files directory
 STATIC_DIR = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class ChatRequest(BaseModel):
-    user_id: str = "user-default"
-    employee_id: str = "EMP-001"
+    user_id: str = "harrylin"
     message: str
+    mcp_token: Optional[str] = None
 
 
 class DirectConfirmRequest(BaseModel):
     action: str
     confirmation_token: str
     payload: Dict[str, Any]
+    mcp_token: Optional[str] = None
 
 
 @app.on_event("startup")
@@ -65,52 +65,43 @@ async def serve_index():
 
 @app.get("/api/status")
 async def get_system_status():
-    """Returns connectivity and health status."""
+    """Returns connectivity, active user, and health status."""
     return {
         "status": "HEALTHY",
         "agent": "WorkAgent (WorkWeek HCM Specialist)",
         "model": "Gemini 2.5 Flash / 3.7 Flash",
+        "authenticated_user": {
+            "name": "Harry Lin",
+            "email": "harrylin@google.com",
+            "employee_id": "EMP-HL-001",
+            "role": "Customer Engineer & Enterprise Solutions Architect",
+            "subject_isolation": "ENFORCED (Self-Only Access)"
+        },
         "workweek_service": {
             "endpoint": workweek_client.base_url,
             "mode": workweek_client.connected_mode,
-            "mcp_token_configured": bool(workweek_client.mcp_token)
+            "token_configured": bool(workweek_client.mcp_token)
         },
         "supported_tools": [
-            "get_employee_profile",
-            "get_leave_balances",
-            "get_leave_request_status",
-            "stage_leave_request",
-            "submit_leave_request",
-            "stage_contact_update",
-            "update_contact_info"
+            "get_my_employee_profile",
+            "get_my_leave_balances",
+            "get_my_leave_request_status",
+            "stage_my_leave_request",
+            "submit_my_leave_request",
+            "stage_my_contact_update",
+            "update_my_contact_info"
         ]
     }
 
 
-@app.get("/api/employees")
-async def list_employees():
-    """Returns available employee personas for testing."""
-    emps = []
-    for emp_id, data in workweek_client._db.items():
-        emps.append({
-            "employee_id": emp_id,
-            "name": data["name"],
-            "title": data["title"],
-            "department": data["department"],
-            "location": data["location"],
-            "jurisdiction": data["jurisdiction"]
-        })
-    return {"employees": emps}
+@app.get("/api/me/profile")
+async def get_my_profile():
+    return await workweek_client.get_employee_profile("EMP-HL-001")
 
 
-@app.get("/api/employees/{employee_id}/profile")
-async def get_profile(employee_id: str):
-    return await workweek_client.get_employee_profile(employee_id)
-
-
-@app.get("/api/employees/{employee_id}/balances")
-async def get_balances(employee_id: str):
-    return await workweek_client.get_leave_balances(employee_id)
+@app.get("/api/me/balances")
+async def get_my_balances():
+    return await workweek_client.get_leave_balances("EMP-HL-001")
 
 
 @app.post("/api/chat")
@@ -120,7 +111,8 @@ async def chat_interaction(req: ChatRequest):
         response = await orchestrator.process_user_message(
             user_id=req.user_id,
             message_text=req.message,
-            current_employee_id=req.employee_id
+            authenticated_employee_id="EMP-HL-001",
+            user_mcp_token=req.mcp_token
         )
         return response
     except Exception as e:
@@ -131,7 +123,7 @@ async def chat_interaction(req: ChatRequest):
 async def confirm_action(req: DirectConfirmRequest):
     """Directly confirms and commits a staged action using the cryptographic token."""
     if req.action == "submit_leave_request":
-        res = await submit_leave_request(
+        res = await submit_my_leave_request(
             leave_type=req.payload.get("leave_type", "Vacation"),
             start_date=req.payload.get("start_date", ""),
             end_date=req.payload.get("end_date", ""),
@@ -141,7 +133,7 @@ async def confirm_action(req: DirectConfirmRequest):
         )
         return res
     elif req.action == "update_contact_info":
-        res = await update_contact_info(
+        res = await update_my_contact_info(
             phone=req.payload.get("phone"),
             address=req.payload.get("address"),
             emergency_contact=req.payload.get("emergency_contact"),

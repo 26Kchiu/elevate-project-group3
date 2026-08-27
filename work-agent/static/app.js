@@ -1,44 +1,19 @@
 // WorkAgent Client Application Logic
 
-const PERSONA_DATA = {
-  "EMP-001": {
-    name: "Sarah Chen",
-    initials: "SC",
-    title: "VP People Operations & Staff Engineer",
-    badge: "EMP-001 • Sydney, AU"
-  },
-  "EMP-002": {
-    name: "Alex Rivera",
-    initials: "AR",
-    title: "IT Operations Director",
-    badge: "EMP-002 • London, UK"
-  },
-  "EMP-003": {
-    name: "Jordan Lee",
-    initials: "JL",
-    title: "Senior Product Manager",
-    badge: "EMP-003 • Mountain View, US"
-  }
-};
-
-let currentEmployeeId = "EMP-001";
-const userId = "user-" + Math.random().toString(36).substring(2, 9);
+const userId = "harrylin";
+let mcpToken = "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg";
 
 document.addEventListener("DOMContentLoaded", () => {
-  const select = document.getElementById("personaSelect");
-  select.addEventListener("change", (e) => {
-    currentEmployeeId = e.target.value;
-    updatePersonaCard(currentEmployeeId);
-    appendSystemMessage(`Switched active employee context to <strong>${PERSONA_DATA[currentEmployeeId].name} (${currentEmployeeId})</strong>.`);
+  const tokenInput = document.getElementById("mcpTokenInput");
+  tokenInput.addEventListener("change", (e) => {
+    mcpToken = e.target.value.trim();
+    appendSystemMessage(`Updated MCP PAT token to: <code>${mcpToken.substring(0, 10)}...</code>`);
   });
 });
 
-function updatePersonaCard(empId) {
-  const data = PERSONA_DATA[empId] || PERSONA_DATA["EMP-001"];
-  document.getElementById("empAvatar").innerText = data.initials;
-  document.getElementById("empName").innerText = data.name;
-  document.getElementById("empTitle").innerText = data.title;
-  document.getElementById("empIdBadge").innerText = data.badge;
+function toggleTokenVisibility() {
+  const input = document.getElementById("mcpTokenInput");
+  input.type = input.type === "password" ? "text" : "password";
 }
 
 function sendQuickPrompt(text) {
@@ -65,7 +40,6 @@ async function handleFormSubmit(e) {
   const sendBtn = document.getElementById("sendBtn");
   sendBtn.disabled = true;
 
-  // Add typing indicator
   const typingId = appendTypingIndicator();
 
   try {
@@ -74,8 +48,8 @@ async function handleFormSubmit(e) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         user_id: userId,
-        employee_id: currentEmployeeId,
-        message: text
+        message: text,
+        mcp_token: document.getElementById("mcpTokenInput").value.trim()
       })
     });
 
@@ -121,7 +95,7 @@ function appendTypingIndicator() {
   const id = "typing-" + Date.now();
   row.id = id;
   row.className = "message-row agent";
-  row.innerHTML = `<div class="agent-bubble"><em>WorkAgent is querying WorkWeek SaaS...</em></div>`;
+  row.innerHTML = `<div class="agent-bubble"><em>WorkAgent is querying WorkWeek SaaS with your token...</em></div>`;
   stream.appendChild(row);
   stream.scrollTop = stream.scrollHeight;
   return id;
@@ -147,7 +121,7 @@ function appendAgentResponse(data) {
         <div class="tool-call-card">
           <div class="tool-call-header">
             <span>⚡ Tool Executed: ${escapeHtml(tc.name)}</span>
-            <span>WorkWeek HCM Live</span>
+            <span>WorkWeek HCM (Harry Lin Context)</span>
           </div>
         </div>
       `;
@@ -165,7 +139,7 @@ function appendAgentResponse(data) {
         </div>
         <div class="confirm-details">
           <div><strong>Action:</strong> ${escapeHtml(card.action_required || "Submit Leave")}</div>
-          <div><strong>Employee:</strong> ${escapeHtml(staged.employee_id || currentEmployeeId)}</div>
+          <div><strong>Authenticated User:</strong> Harry Lin (EMP-HL-001)</div>
           <div><strong>Leave Type:</strong> ${escapeHtml(staged.leave_type || "N/A")}</div>
           <div><strong>Dates:</strong> ${escapeHtml(staged.start_date || "")} to ${escapeHtml(staged.end_date || "")}</div>
           <div class="confirm-token-badge">Token: ${escapeHtml(card.confirmation_token)} (SHA-256 bound)</div>
@@ -200,7 +174,8 @@ async function executeConfirmation(token, stagedJsonStr) {
       body: JSON.stringify({
         action: "submit_leave_request",
         confirmation_token: token,
-        payload: staged
+        payload: staged,
+        mcp_token: document.getElementById("mcpTokenInput").value.trim()
       })
     });
 
@@ -242,7 +217,7 @@ function clearChat() {
   stream.innerHTML = `
     <div class="message-row system">
       <div class="system-bubble">
-        Chat cleared. Ready for new inquiries for <strong>${PERSONA_DATA[currentEmployeeId].name}</strong>.
+        Chat cleared. Ready for new inquiries for <strong>Harry Lin</strong>.
       </div>
     </div>
   `;

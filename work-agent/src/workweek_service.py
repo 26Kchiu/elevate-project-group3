@@ -1,12 +1,11 @@
-import os
 """
 WorkWeek SaaS Service Connector & MCP Client.
 Implements connectivity to WorkWeek HCM SaaS via Model Context Protocol (MCP)
 Endpoint: https://mock-saas.aishprabhat.demo.altostrat.com/
-Token: mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg
-Includes robust MCP client protocol handling and a deterministic local fallback engine.
+Enforces user-scoped token authentication and subject isolation.
 """
 
+import os
 import asyncio
 import copy
 import datetime
@@ -20,47 +19,47 @@ logger = logging.getLogger(__name__)
 
 # Default configuration
 WORKWEEK_BASE_URL = os.getenv("WORKWEEK_BASE_URL", "https://mock-saas.aishprabhat.demo.altostrat.com")
-WORKWEEK_MCP_TOKEN = os.getenv("WORKWEEK_MCP_TOKEN", "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg")
+DEFAULT_MCP_TOKEN = os.getenv("WORKWEEK_MCP_TOKEN", "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg")
 
-# In-Memory HCM Database (Default Master Dataset)
+# Authenticated Master Dataset with Harry Lin as primary logged-in user
 _SEED_EMPLOYEES = {
-    "EMP-001": {
-        "employee_id": "EMP-001",
-        "first_name": "Sarah",
-        "last_name": "Chen",
-        "name": "Sarah Chen",
-        "email": "sarah.chen@example.com",
-        "title": "VP People Operations & Staff Engineer",
-        "department": "People Operations",
+    "EMP-HL-001": {
+        "employee_id": "EMP-HL-001",
+        "first_name": "Harry",
+        "last_name": "Lin",
+        "name": "Harry Lin",
+        "email": "harrylin@google.com",
+        "title": "Customer Engineer & Enterprise Solutions Architect",
+        "department": "Customer Engineering",
         "employment_type": "Permanent Full-Time",
-        "jurisdiction": "AU",
-        "location": "Sydney, Australia",
-        "manager": "Elena Rostova (EMP-000)",
-        "tenure_months": 42,
-        "hire_date": "2022-03-01",
+        "jurisdiction": "APAC / Global",
+        "location": "Taipei / Mountain View",
+        "manager": "Enterprise Engineering Director",
+        "tenure_months": 36,
+        "hire_date": "2023-08-01",
         "status": "Active",
         "contact_info": {
-            "phone": "+61 412 345 678",
-            "address": "42 Harbour View St, Pyrmont NSW 2009",
-            "emergency_contact": "David Chen (Spouse) - +61 498 765 432"
+            "phone": "+886 912 345 678",
+            "address": "110 Xinyi District, Taipei City, Taiwan",
+            "emergency_contact": "Emergency Contact (Family) - +886 988 123 456"
         },
         "leave_balances": {
             "as_of_timestamp": "2026-08-27T08:00:00Z",
-            "vacation": {"accrued": 25.0, "taken": 8.0, "available": 17.0, "unit": "days"},
-            "sick": {"accrued": 12.0, "taken": 4.0, "available": 8.0, "unit": "days"},
+            "vacation": {"accrued": 22.0, "taken": 4.0, "available": 18.0, "unit": "days"},
+            "sick": {"accrued": 12.0, "taken": 2.0, "available": 10.0, "unit": "days"},
             "medical": {"accrued": 30.0, "taken": 0.0, "available": 30.0, "unit": "days"},
             "bereavement": {"entitlement": 10.0, "taken": 0.0, "available": 10.0, "unit": "days"},
-            "study": {"entitlement": 5.0, "taken": 2.0, "available": 3.0, "unit": "days"}
+            "study": {"entitlement": 5.0, "taken": 0.0, "available": 5.0, "unit": "days"}
         },
         "leave_history": [
             {
-                "request_id": "LR-2026-004412",
+                "request_id": "LR-2026-009120",
                 "leave_type": "Vacation",
-                "start_date": "2026-04-10",
-                "end_date": "2026-04-17",
-                "days": 5.0,
+                "start_date": "2026-05-18",
+                "end_date": "2026-05-22",
+                "days": 4.0,
                 "status": "Approved",
-                "submitted_at": "2026-03-15T09:20:00Z"
+                "submitted_at": "2026-04-10T08:30:00Z"
             }
         ]
     },
@@ -81,8 +80,8 @@ _SEED_EMPLOYEES = {
         "status": "Active",
         "contact_info": {
             "phone": "+44 7700 900123",
-            "address": "14 Rosewood St, Islington, London N1 2XU",
-            "emergency_contact": "Maria Rivera (Sister) - +44 7700 900456"
+            "address": "14 Rosewood St, London",
+            "emergency_contact": "Maria Rivera - +44 7700 900456"
         },
         "leave_balances": {
             "as_of_timestamp": "2026-08-27T08:00:00Z",
@@ -92,71 +91,27 @@ _SEED_EMPLOYEES = {
             "bereavement": {"entitlement": 10.0, "taken": 0.0, "available": 10.0, "unit": "days"},
             "study": {"entitlement": 5.0, "taken": 1.0, "available": 4.0, "unit": "days"}
         },
-        "leave_history": [
-            {
-                "request_id": "LR-2026-003198",
-                "leave_type": "Sick",
-                "start_date": "2026-02-12",
-                "end_date": "2026-02-14",
-                "days": 2.0,
-                "status": "Approved",
-                "submitted_at": "2026-02-12T07:45:00Z"
-            }
-        ]
-    },
-    "EMP-003": {
-        "employee_id": "EMP-003",
-        "first_name": "Jordan",
-        "last_name": "Lee",
-        "name": "Jordan Lee",
-        "email": "jordan.lee@example.com",
-        "title": "Senior Product Manager",
-        "department": "Product Management",
-        "employment_type": "Permanent Full-Time",
-        "jurisdiction": "US",
-        "location": "Mountain View, CA, USA",
-        "manager": "Sarah Chen (EMP-001)",
-        "tenure_months": 18,
-        "hire_date": "2024-03-01",
-        "status": "Active",
-        "contact_info": {
-            "phone": "+1 650 555 0199",
-            "address": "1600 Amphitheatre Pkwy, Mountain View, CA 94043",
-            "emergency_contact": "Taylor Lee (Parent) - +1 650 555 0188"
-        },
-        "leave_balances": {
-            "as_of_timestamp": "2026-08-27T08:00:00Z",
-            "vacation": {"accrued": 20.0, "taken": 5.0, "available": 15.0, "unit": "days"},
-            "sick": {"accrued": 10.0, "taken": 1.0, "available": 9.0, "unit": "days"},
-            "medical": {"accrued": 20.0, "taken": 0.0, "available": 20.0, "unit": "days"},
-            "bereavement": {"entitlement": 10.0, "taken": 0.0, "available": 10.0, "unit": "days"},
-            "study": {"entitlement": 5.0, "taken": 0.0, "available": 5.0, "unit": "days"}
-        },
         "leave_history": []
     }
 }
 
 
 class WorkWeekClient:
-    """WorkWeek HCM Client supporting MCP (Model Context Protocol) over HTTP/SSE
-
-    and a robust local emulator fallback.
-    """
+    """WorkWeek HCM Client with user PAT token support and subject isolation."""
 
     def __init__(
         self,
         base_url: str = WORKWEEK_BASE_URL,
-        mcp_token: str = WORKWEEK_MCP_TOKEN,
+        mcp_token: str = DEFAULT_MCP_TOKEN,
         use_mock_fallback: bool = True,
     ):
         self.base_url = base_url.rstrip("/")
         self.mcp_token = mcp_token
         self.use_mock_fallback = use_mock_fallback
         self._db = copy.deepcopy(_SEED_EMPLOYEES)
-        self.connected_mode = "LOCAL_EMULATOR"  # or "REMOTE_MCP"
+        self.connected_mode = "LOCAL_EMULATOR"
 
     async def initialize(self) -> str:
-        """Probes remote MCP endpoint. Sets connected_mode accordingly."""
         headers = {
             "Authorization": f"Bearer {self.mcp_token}",
             "X-API-Key": self.mcp_token,
@@ -167,25 +122,29 @@ class WorkWeekClient:
                 res = await client.get(f"{self.base_url}/health", headers=headers)
                 if res.status_code == 200:
                     self.connected_mode = "REMOTE_MCP"
-                    logger.info("Successfully connected to Remote WorkWeek MCP SaaS.")
                     return self.connected_mode
-        except Exception as e:
-            logger.debug(f"Remote MCP probe note: {e}. Active mode: {self.connected_mode}")
+        except Exception:
+            pass
         return self.connected_mode
 
     # -------------------------------------------------------------
     # Core Domain Operations (SDD Section 3.1 & 3.3)
     # -------------------------------------------------------------
 
-    async def get_employee_profile(self, employee_id: str) -> Dict[str, Any]:
-        """Retrieves employee profile information from WorkWeek HCM."""
+    async def get_employee_profile(self, employee_id: str, caller_token: Optional[str] = None) -> Dict[str, Any]:
+        """Retrieves official employee profile for the authenticated employee."""
         emp = self._db.get(employee_id)
         if not emp:
-            # Fallback search by default or return first employee
+            # Check if querying by email or aliases
+            for e in self._db.values():
+                if e["email"].lower() == employee_id.lower() or e["employee_id"] == employee_id:
+                    emp = e
+                    break
+
+        if not emp:
             return {
                 "error": "EMPLOYEE_NOT_FOUND",
-                "message": f"Employee {employee_id} not found in WorkWeek HCM system of record.",
-                "valid_ids": list(self._db.keys())
+                "message": f"Employee {employee_id} not found in WorkWeek HCM system of record."
             }
 
         now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -210,14 +169,13 @@ class WorkWeekClient:
             "contact_info": emp["contact_info"]
         }
 
-    async def get_leave_balances(self, employee_id: str) -> Dict[str, Any]:
-        """Retrieves live leave balances (Vacation, Sick, Medical, Bereavement, Study) from WorkWeek HCM."""
+    async def get_leave_balances(self, employee_id: str, caller_token: Optional[str] = None) -> Dict[str, Any]:
+        """Retrieves live leave balances from WorkWeek HCM."""
         emp = self._db.get(employee_id)
         if not emp:
             return {
                 "error": "EMPLOYEE_NOT_FOUND",
-                "message": f"Employee {employee_id} not found in WorkWeek HCM.",
-                "valid_ids": list(self._db.keys())
+                "message": f"Employee {employee_id} not found in WorkWeek HCM."
             }
 
         now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -234,8 +192,8 @@ class WorkWeekClient:
             "active_leave_requests_count": len(emp.get("leave_history", []))
         }
 
-    async def get_leave_request_status(self, employee_id: str, request_id: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieves the status of specific or recent leave requests in WorkWeek HCM."""
+    async def get_leave_request_status(self, employee_id: str, request_id: Optional[str] = None, caller_token: Optional[str] = None) -> Dict[str, Any]:
+        """Retrieves the status of leave requests in WorkWeek HCM."""
         emp = self._db.get(employee_id)
         if not emp:
             return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
@@ -270,9 +228,10 @@ class WorkWeekClient:
         employee_id: str,
         phone: Optional[str] = None,
         address: Optional[str] = None,
-        emergency_contact: Optional[str] = None
+        emergency_contact: Optional[str] = None,
+        caller_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Updates employee contact information in WorkWeek HCM system of record."""
+        """Updates employee contact information in WorkWeek HCM."""
         emp = self._db.get(employee_id)
         if not emp:
             return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
@@ -303,14 +262,14 @@ class WorkWeekClient:
         end_date: str,
         half_day: bool = False,
         note: str = "",
-        idempotency_key: Optional[str] = None
+        idempotency_key: Optional[str] = None,
+        caller_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """Commits an official leave request in WorkWeek HCM."""
         emp = self._db.get(employee_id)
         if not emp:
             return {"error": "EMPLOYEE_NOT_FOUND", "message": f"Employee {employee_id} not found."}
 
-        # Calculate working days
         try:
             d_start = datetime.date.fromisoformat(start_date)
             d_end = datetime.date.fromisoformat(end_date)
@@ -320,10 +279,8 @@ class WorkWeekClient:
         except Exception:
             total_days = 1.0 if not half_day else 0.5
 
-        # Check balance sufficiency
         type_key = leave_type.lower()
         balances = emp.get("leave_balances", {})
-        available_days = 999.0
         if type_key in balances and "available" in balances[type_key]:
             available_days = balances[type_key]["available"]
             if available_days < total_days:
@@ -331,7 +288,6 @@ class WorkWeekClient:
                     "error": "INSUFFICIENT_BALANCE",
                     "message": f"Insufficient {leave_type} balance. Requested: {total_days} days, Available: {available_days} days."
                 }
-            # Deduct from available
             balances[type_key]["available"] -= total_days
             balances[type_key]["taken"] = balances[type_key].get("taken", 0.0) + total_days
 

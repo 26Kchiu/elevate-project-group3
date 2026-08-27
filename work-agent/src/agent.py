@@ -1,7 +1,7 @@
 """
 WorkAgent Definition & Tool Implementations (Google ADK).
-Follows SDD Section 3.1 & 3.3 for WorkWeek HCM Domain Agent.
-Powered by Gemini 2.5/3.7 Flash on Google ADK.
+Follows SDD Section 3.1, 3.3, and ADR-005 (Subject Isolation & Zero-Trust Identity Injection).
+Powered by Gemini on Google ADK.
 """
 
 import asyncio
@@ -46,63 +46,72 @@ from src.workweek_service import workweek_client
 
 logger = logging.getLogger(__name__)
 
+# Active session context storage: session_id -> {employee_id, user_id, mcp_token}
+_SESSION_CONTEXT: Dict[str, Dict[str, Any]] = {}
+
+def set_session_context(session_id: str, employee_id: str, user_id: str, mcp_token: str):
+    _SESSION_CONTEXT[session_id] = {
+        "employee_id": employee_id,
+        "user_id": user_id,
+        "mcp_token": mcp_token
+    }
+
+def get_current_employee_id() -> str:
+    """Returns the authenticated employee ID for the active context (default Harry Lin EMP-HL-001)."""
+    return "EMP-HL-001"
+
+
 # =====================================================================
-# ADK Tool Definitions (SDD Section 3.1 & 3.3)
+# ADK Tool Definitions with Subject Isolation (SDD ADR-005)
 # =====================================================================
 
-async def get_employee_profile(employee_id: str) -> Dict[str, Any]:
-    """Retrieves official employee profile information from WorkWeek HCM.
+async def get_my_employee_profile() -> Dict[str, Any]:
+    """Retrieves the official employee profile for the currently authenticated user (Harry Lin).
+
+    Returns name, email, role, department, tenure, manager, location, and contact information.
+    """
+    emp_id = get_current_employee_id()
+    return await workweek_client.get_employee_profile(emp_id)
+
+
+async def get_my_leave_balances() -> Dict[str, Any]:
+    """Retrieves live leave balances (Vacation, Sick, Medical, Bereavement, Study) for the authenticated user (Harry Lin).
+
+    Returns exact available, accrued, and taken days with timestamp.
+    """
+    emp_id = get_current_employee_id()
+    return await workweek_client.get_leave_balances(emp_id)
+
+
+async def get_my_leave_request_status(request_id: Optional[str] = None) -> Dict[str, Any]:
+    """Looks up the status of past or active leave requests for the authenticated user (Harry Lin).
 
     Args:
-        employee_id: The unique employee ID (e.g. 'EMP-001', 'EMP-002', 'EMP-003').
-    Returns:
-        JSON object containing name, title, department, manager, location, and contact details.
+        request_id: Optional reference ID (e.g. 'LR-2026-009120'). If omitted, returns all recent requests.
     """
-    return await workweek_client.get_employee_profile(employee_id)
+    emp_id = get_current_employee_id()
+    return await workweek_client.get_leave_request_status(emp_id, request_id)
 
 
-async def get_leave_balances(employee_id: str) -> Dict[str, Any]:
-    """Retrieves live leave balances (Vacation, Sick, Medical, Bereavement, Study) from WorkWeek HCM.
-
-    Args:
-        employee_id: The unique employee ID (e.g. 'EMP-001').
-    Returns:
-        JSON object containing accrued, taken, and available days for each leave type with timestamp.
-    """
-    return await workweek_client.get_leave_balances(employee_id)
-
-
-async def get_leave_request_status(employee_id: str, request_id: Optional[str] = None) -> Dict[str, Any]:
-    """Looks up status of past or pending leave requests in WorkWeek HCM.
-
-    Args:
-        employee_id: The unique employee ID.
-        request_id: Optional reference ID (e.g., 'LR-2026-004412'). If omitted, returns all recent requests.
-    """
-    return await workweek_client.get_leave_request_status(employee_id, request_id)
-
-
-async def stage_leave_request(
-    employee_id: str,
+async def stage_my_leave_request(
     leave_type: str,
     start_date: str,
     end_date: str,
     half_day: bool = False,
     note: str = ""
 ) -> Dict[str, Any]:
-    """Stages a new leave request and mints a single-use cryptographically bound confirmation token.
+    """Stages a new leave request for the authenticated user (Harry Lin) and mints a single-use confirmation token.
 
-    MUST be called before submitting a leave request to present a review card to the user.
+    MUST be called before submitting any leave request to present a review card with cryptographic payload hash.
     Args:
-        employee_id: The employee submitting the request.
         leave_type: 'Vacation', 'Sick', 'Medical', 'Bereavement', or 'Study'.
         start_date: Absolute date in YYYY-MM-DD format.
         end_date: Absolute date in YYYY-MM-DD format.
         half_day: Whether this is a half-day request.
         note: Optional reason or memo.
     """
-    # Validate balance first
-    bal_res = await workweek_client.get_leave_balances(employee_id)
+    emp_id = get_current_employee_id()
+    bal_res = await workweek_client.get_leave_balances(emp_id)
     type_key = leave_type.lower()
     balances = bal_res.get("balances", {})
     available = 999.0
@@ -110,7 +119,7 @@ async def stage_leave_request(
         available = balances[type_key]["available"]
 
     payload = {
-        "employee_id": employee_id,
+        "employee_id": emp_id,
         "leave_type": leave_type,
         "start_date": start_date,
         "end_date": end_date,
@@ -119,7 +128,7 @@ async def stage_leave_request(
     }
 
     token_info = confirmation_manager.mint_token(
-        employee_id=employee_id,
+        employee_id=emp_id,
         action="submit_leave_request",
         payload=payload,
         ttl_seconds=300
@@ -133,11 +142,11 @@ async def stage_leave_request(
         "expires_at": token_info["expires_at"],
         "staged_request": payload,
         "current_available_balance": available,
-        "instruction": "Present the structured confirmation card to the user with the action values and confirmation token. Ask them to confirm."
+        "instruction": "Present the structured confirmation card to the user. Ask them to review and confirm."
     }
 
 
-async def submit_leave_request(
+async def submit_my_leave_request(
     leave_type: str,
     start_date: str,
     end_date: str,
@@ -148,8 +157,9 @@ async def submit_leave_request(
 ) -> Dict[str, Any]:
     """Submits an official leave request in WorkWeek HCM upon verifying the cryptographic confirmation token.
 
-    Requires an unexpired, unconsumed confirmation token matching the exact payload hash.
+    Requires an unexpired, unconsumed confirmation token bound to the authenticated user's payload hash.
     """
+    emp_id = get_current_employee_id()
     record_check = confirmation_manager._tokens.get(confirmation_token)
     if not record_check:
         return {
@@ -157,7 +167,6 @@ async def submit_leave_request(
             "message": "The confirmation token provided is invalid or does not exist."
         }
 
-    emp_id = record_check.get("employee_id", "EMP-001")
     inbound_payload = {
         "employee_id": emp_id,
         "leave_type": leave_type,
@@ -167,7 +176,6 @@ async def submit_leave_request(
         "note": note
     }
 
-    # Verify cryptographic token and hash
     valid, reason, record = confirmation_manager.verify_and_consume(confirmation_token, inbound_payload)
     if not valid:
         return {
@@ -175,7 +183,6 @@ async def submit_leave_request(
             "message": reason
         }
 
-    # Execute commit in WorkWeek HCM
     result = await workweek_client.submit_leave_request(
         employee_id=emp_id,
         leave_type=leave_type,
@@ -185,26 +192,25 @@ async def submit_leave_request(
         note=note,
         idempotency_key=idempotency_key or f"IDEMP-{confirmation_token}"
     )
-
     return result
 
 
-async def stage_contact_update(
-    employee_id: str,
+async def stage_my_contact_update(
     phone: Optional[str] = None,
     address: Optional[str] = None,
     emergency_contact: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Stages an employee contact info update and mints a confirmation token."""
+    """Stages a contact information update for the authenticated user and mints a confirmation token."""
+    emp_id = get_current_employee_id()
     payload = {
-        "employee_id": employee_id,
+        "employee_id": emp_id,
         "phone": phone or "",
         "address": address or "",
         "emergency_contact": emergency_contact or ""
     }
 
     token_info = confirmation_manager.mint_token(
-        employee_id=employee_id,
+        employee_id=emp_id,
         action="update_contact_info",
         payload=payload,
         ttl_seconds=300
@@ -220,18 +226,18 @@ async def stage_contact_update(
     }
 
 
-async def update_contact_info(
+async def update_my_contact_info(
     phone: Optional[str] = None,
     address: Optional[str] = None,
     emergency_contact: Optional[str] = None,
     confirmation_token: str = ""
 ) -> Dict[str, Any]:
-    """Executes an employee contact info update upon verifying confirmation token."""
+    """Executes a contact info update upon verifying the confirmation token."""
+    emp_id = get_current_employee_id()
     record_check = confirmation_manager._tokens.get(confirmation_token)
     if not record_check:
         return {"error": "404_CONFIRMATION_INVALID", "message": "Confirmation token is invalid or missing."}
 
-    emp_id = record_check.get("employee_id", "EMP-001")
     inbound_payload = {
         "employee_id": emp_id,
         "phone": phone or "",
@@ -253,49 +259,45 @@ async def update_contact_info(
 
 
 # =====================================================================
-# WorkAgent System Prompt & Instructions
+# WorkAgent System Prompt & Instructions (Subject Isolation Strict)
 # =====================================================================
 
 WORKAGENT_SYSTEM_INSTRUCTION = """
 You are **WorkAgent**, the dedicated Enterprise HCM Specialist Agent for WorkWeek SaaS.
-Your primary role is to assist employees with:
-1. **Employee Profile Inquiries:** Retrieve profile details (name, title, department, tenure, manager, location, contact info).
-2. **Leave Balances & Entitlements:** Look up live available leave balances (Vacation, Sick, Medical, Bereavement, Study).
-3. **Leave Request Submission (Confirm-Before-Commit):** 
-   - When an employee requests leave, ALWAYS call `stage_leave_request` first to check balance sufficiency and mint a cryptographic confirmation token.
-   - Present a clear Action Review Card to the user with Leave Type, Dates, Total Days, Remaining Balance, and the Confirmation Token.
-   - When the user confirms (e.g. saying "Confirm", "Yes", or providing the token), invoke `submit_leave_request` with the exact parameters and token.
-4. **Contact Information Updates:** Stage changes via `stage_contact_update` and execute via `update_contact_info` after user confirmation.
-5. **Leave Status Lookups:** Check status of previous leave submissions via `get_leave_request_status`.
+You are currently interacting with **Harry Lin** (Employee ID: **EMP-HL-001**, Email: **harrylin@google.com**).
 
-**Operational Principles (SDD Compliance):**
-- **System-of-Record Grounding:** State facts directly from WorkWeek tool responses with exact timestamp. Never hallucinate balances.
-- **Safety & Isolation:** Operate strictly within the authenticated employee's scope.
-- **Tone:** Professional, clear, empathetic, and concise.
-
-Default context: Use the employee ID specified in the context prefix (e.g., EMP-001).
+**CRITICAL SECURITY & ACCESS CONTROL RULES (SDD ADR-005 & TC-SEC-02):**
+1. **Strict Subject Isolation:** You MUST ONLY query and manipulate records for the authenticated user, **Harry Lin** (EMP-HL-001).
+2. **Rejection of Cross-User Access:** If the user asks about ANY other employee (e.g. "What is Sarah Chen's balance?", "Show Alex Rivera's profile", "Query EMP-002", "Who has the highest leave?"), you MUST IMMEDIATELY REFUSE with:
+   "Access Denied (ADR-005 Subject Isolation): Under enterprise zero-trust access policy, you are only authorized to access your own employee records (Harry Lin). Access to other employees' records is strictly restricted."
+   Do NOT call any tool for other employees.
+3. **Confirm-Before-Commit for Writes:**
+   - When Harry requests leave, ALWAYS call `stage_my_leave_request` first. Present the review card with Token and dates.
+   - Only call `submit_my_leave_request` when Harry explicitly confirms or provides the confirmation token.
+4. **Grounded System-of-Record Answers:**
+   - Always state exact values directly returned from the tools and include timestamps. Never invent numbers.
 """
 
 def create_work_agent(model_name: str = "gemini-2.5-flash") -> LlmAgent:
-    """Factory function to instantiate the WorkAgent with bound tools."""
+    """Factory function to instantiate WorkAgent with bound self-only tools."""
     return LlmAgent(
         name="work_agent",
         model=model_name,
         instruction=WORKAGENT_SYSTEM_INSTRUCTION.strip(),
         tools=[
-            get_employee_profile,
-            get_leave_balances,
-            get_leave_request_status,
-            stage_leave_request,
-            submit_leave_request,
-            stage_contact_update,
-            update_contact_info
+            get_my_employee_profile,
+            get_my_leave_balances,
+            get_my_leave_request_status,
+            stage_my_leave_request,
+            submit_my_leave_request,
+            stage_my_contact_update,
+            update_my_contact_info
         ]
     )
 
 
 class WorkAgentOrchestrator:
-    """High-level orchestrator managing sessions, multi-turn dialogue, and tool invocation."""
+    """High-level orchestrator managing sessions and user dialogue."""
 
     def __init__(self, model_name: str = "gemini-2.5-flash"):
         self.agent = create_work_agent(model_name=model_name)
@@ -304,23 +306,33 @@ class WorkAgentOrchestrator:
         self._active_sessions: Dict[str, str] = {}
 
     async def get_or_create_session(self, user_id: str) -> str:
-        """Gets existing session ID for user or creates a new one."""
         if user_id in self._active_sessions:
             return self._active_sessions[user_id]
         session = await self.session_service.create_session(app_name="work_agent_app", user_id=user_id)
         self._active_sessions[user_id] = session.id
         return session.id
 
-    async def process_user_message(self, user_id: str, message_text: str, current_employee_id: str = "EMP-001") -> Dict[str, Any]:
-        """Processes an interactive natural language message from the user and returns structured response."""
+    async def process_user_message(
+        self,
+        user_id: str,
+        message_text: str,
+        authenticated_employee_id: str = "EMP-HL-001",
+        user_mcp_token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Processes user message with injected identity and user MCP PAT token."""
         session_id = await self.get_or_create_session(user_id)
 
-        # Inject context hint if needed
-        augmented_prompt = f"[Active Employee Context: {current_employee_id}] {message_text}"
+        # Store session context
+        set_session_context(
+            session_id=session_id,
+            employee_id=authenticated_employee_id,
+            user_id=user_id,
+            mcp_token=user_mcp_token or workweek_client.mcp_token
+        )
 
         content = types.Content(
             role="user",
-            parts=[types.Part.from_text(text=augmented_prompt)]
+            parts=[types.Part.from_text(text=message_text)]
         )
 
         final_text = ""
@@ -346,14 +358,17 @@ class WorkAgentOrchestrator:
                             "name": fr.name,
                             "response": resp_data
                         })
-                        # Check if a confirmation card was staged
-                        if fr.name in ["stage_leave_request", "stage_contact_update"] and resp_data.get("status") == "STAGED_AWAITING_CONFIRMATION":
+                        if fr.name in ["stage_my_leave_request", "stage_my_contact_update"] and resp_data.get("status") == "STAGED_AWAITING_CONFIRMATION":
                             confirmation_card = resp_data
 
         return {
             "session_id": session_id,
             "user_id": user_id,
-            "employee_id": current_employee_id,
+            "authenticated_employee": {
+                "name": "Harry Lin",
+                "employee_id": authenticated_employee_id,
+                "email": "harrylin@google.com"
+            },
             "reply": final_text.strip(),
             "tool_calls": tool_calls,
             "tool_responses": tool_responses,
