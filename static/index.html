@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=2.3">
+  <link rel="stylesheet" href="/static/styles.css?v=2.4">
 </head>
 <body>
   <div class="app-container">
@@ -44,17 +44,6 @@
           <option value="gemini-2.5-flash">🚀 Gemini 2.5 Flash</option>
           <option value="gemini-2.5-pro">🧠 Gemini 2.5 Pro</option>
           <option value="gemini-2.0-flash">💨 Gemini 2.0 Flash</option>
-        </select>
-      </div>
-
-      <!-- Speech Recognition Language -->
-      <div class="section-title">VOICE INPUT LANGUAGE (語音輸入語言)</div>
-      <div class="model-select-wrapper">
-        <select id="voiceLangSelector" class="model-select" onchange="handleVoiceLangChange()">
-          <option value="zh-TW" selected>🇹🇼 繁體中文 (Traditional Chinese)</option>
-          <option value="en-US">🇺🇸 English (US)</option>
-          <option value="zh-CN">🇨🇳 简体中文 (Simplified Chinese)</option>
-          <option value="ja-JP">🇯🇵 日本語 (Japanese)</option>
         </select>
       </div>
 
@@ -104,13 +93,13 @@
       <div class="isolation-notice">
         <span class="lock-icon">🔒</span>
         <div>
-          <strong>Subject Isolation &amp; Multi-Lang</strong>
-          <p>Locked to EMP-545. Supports global employee voice &amp; language input (English, 中文, etc.).</p>
+          <strong>Subject Isolation &amp; Auto-Language</strong>
+          <p>Locked to EMP-545. Model automatically detects your language (中文, English, etc.) from typed or spoken input.</p>
         </div>
       </div>
 
       <!-- Quick Actions -->
-      <div class="section-title">QUICK ACTIONS (多語範例 / PROMPTS)</div>
+      <div class="section-title">QUICK ACTIONS (PROMPTS)</div>
       <div class="quick-actions">
         <!-- English Prompts -->
         <button class="action-btn" onclick="sendQuickPrompt('What are my current remaining vacation and sick leave balances in WorkWeek?')">
@@ -152,7 +141,7 @@
             <span class="icon">🤖</span> Auto Gemini
           </span>
           <span class="security-chip">
-            <span class="icon">🌐</span> Global Multi-Lang
+            <span class="icon">🌐</span> Auto-Detect Language
           </span>
           <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
         </div>
@@ -163,8 +152,8 @@
         <div class="message-row system">
           <div class="system-bubble">
             ✨ Welcome to the <strong>Elevate Multi-Agent Portal</strong>!<br>
-            • <strong>Multi-Language Enabled</strong>: Ask in <strong>English, 繁體中文, 簡體中文, 日本語</strong>, etc. Responses will match your language.<br>
-            • <strong>Speech-To-Text (Voice Input)</strong>: Click the 🎙️ microphone button next to Send to speak your question! Real-time voice transcript will appear in the box.
+            • <strong>Auto Language Detection</strong>: Type or speak in any language (<strong>English, 繁體中文, 簡體中文, 日本語</strong>, etc.). The Gemini model will automatically detect and respond in your language.<br>
+            • <strong>Voice Input (Speech-To-Text)</strong>: Click the 🎙️ microphone button next to Send to speak your question!
           </div>
         </div>
       </div>
@@ -172,7 +161,7 @@
       <!-- Voice Recording Status Banner -->
       <div class="voice-status-banner" id="voiceBanner" style="display: none;">
         <span class="recording-pulse"></span>
-        <span id="voiceStatusText">Listening (繁體中文)... Please speak into your microphone</span>
+        <span id="voiceStatusText">Listening... Please speak into your microphone</span>
         <button class="btn-voice-cancel" onclick="stopSpeechRecognition()">Done (完成)</button>
       </div>
 
@@ -182,7 +171,7 @@
           <textarea
             id="messageInput"
             rows="1"
-            placeholder="Type or click 🎙️ to speak your question (點擊麥克風語音輸入)..."
+            placeholder="Type or click 🎙️ to speak (e.g. 請查詢我的休假餘額 / Check my leave balances)..."
             onkeydown="handleKeyDown(event)"
           ></textarea>
           <!-- Voice STT Button -->
@@ -191,7 +180,7 @@
             class="btn btn-icon mic-btn"
             id="micBtn"
             onclick="toggleSpeechRecognition()"
-            title="Click to speak (語音輸入)"
+            title="Voice Input (Auto-Detect Speech)"
           >
             <span id="micIcon">🎙️</span>
           </button>
@@ -211,6 +200,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js?v=2.3"></script>
+  <script src="/static/app.js?v=2.4"></script>
 </body>
 </html>

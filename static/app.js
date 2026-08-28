@@ -1,11 +1,10 @@
 /**
  * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
- * Features: Auto-Model Selection, Multi-Language Alignment, and Real-Time Speech-to-Text.
+ * Features: Auto-Model Selection, Model-Level Auto-Language Detection, and Real-Time Speech-to-Text.
  */
 
 let currentAgentMode = "auto";
 let currentModelChoice = "auto";
-let currentVoiceLang = "zh-TW";
 let recognition = null;
 let isRecording = false;
 let basePromptText = "";
@@ -27,21 +26,6 @@ function handleModelChange() {
     } else {
       chip.innerHTML = `<span class="icon">⚡</span> ${escapeHtml(currentModelChoice)}`;
     }
-  }
-}
-
-function handleVoiceLangChange() {
-  const selector = document.getElementById("voiceLangSelector");
-  if (selector) {
-    currentVoiceLang = selector.value;
-  }
-  if (recognition) {
-    recognition.lang = currentVoiceLang;
-  }
-  const statusText = document.getElementById("voiceStatusText");
-  if (statusText) {
-    const langLabel = selector ? selector.options[selector.selectedIndex].text : currentVoiceLang;
-    statusText.innerText = `Listening (${langLabel})... Please speak into your microphone`;
   }
 }
 
@@ -68,7 +52,7 @@ function setAgentMode(mode) {
 }
 
 /**
- * Initialize Speech-To-Text (Web Speech API) with Real-Time Interim Streaming
+ * Initialize Speech-To-Text (Web Speech API) with Auto Language Detection
  */
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -87,7 +71,8 @@ function initSpeechRecognition() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = currentVoiceLang;
+    // Auto-detect browser/system language
+    recognition.lang = navigator.language || (navigator.languages && navigator.languages[0]) || "zh-TW";
 
     recognition.onstart = () => {
       isRecording = true;
@@ -147,11 +132,7 @@ function toggleSpeechRecognition() {
     stopSpeechRecognition();
   } else {
     try {
-      const selector = document.getElementById("voiceLangSelector");
-      if (selector) {
-        currentVoiceLang = selector.value;
-      }
-      recognition.lang = currentVoiceLang;
+      recognition.lang = navigator.language || (navigator.languages && navigator.languages[0]) || "zh-TW";
       recognition.start();
     } catch (err) {
       console.error("Error starting speech recognition:", err);
@@ -174,14 +155,12 @@ function updateVoiceUI(recording) {
   const micIcon = document.getElementById("micIcon");
   const banner = document.getElementById("voiceBanner");
   const statusText = document.getElementById("voiceStatusText");
-  const selector = document.getElementById("voiceLangSelector");
 
   if (recording) {
     if (micBtn) micBtn.classList.add("recording");
     if (micIcon) micIcon.innerText = "⏹️";
     if (statusText) {
-      const langLabel = selector ? selector.options[selector.selectedIndex].text : currentVoiceLang;
-      statusText.innerText = `Listening (${langLabel})... Please speak into your microphone`;
+      statusText.innerText = "Listening... Speak your question in any language (語音輸入中)";
     }
     if (banner) banner.style.display = "flex";
   } else {
@@ -389,7 +368,7 @@ function clearChat() {
     stream.innerHTML = `
       <div class="message-row system">
         <div class="system-bubble">
-          Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries. (支援多國語言與語音輸入)
+          Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries. (支援自動語言偵測與語音輸入)
         </div>
       </div>
     `;
