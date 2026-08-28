@@ -18,6 +18,15 @@ from src.agents.policy_agent.prompts import (
     DEFAULT_PROJECT_ID,
     POLICY_AGENT_SYSTEM_PROMPT,
 )
+
+# Enforce Google Cloud / Vertex AI project backend for ADK
+if "GOOGLE_GENAI_USE_VERTEXAI" not in os.environ:
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "true"
+if "GOOGLE_CLOUD_PROJECT" not in os.environ:
+    os.environ["GOOGLE_CLOUD_PROJECT"] = DEFAULT_PROJECT_ID
+if "GOOGLE_CLOUD_LOCATION" not in os.environ:
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "us-central1"
+
 from src.agents.policy_agent.tools import (
     call_bigquery_conversational_api,
     get_policy_clause,
