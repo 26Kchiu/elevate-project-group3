@@ -45,9 +45,22 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Singleton agent instances
-hcm_agent = WorkWeekHCMAgent()
-itsm_agent = ServiceImmediatelyAgent()
+_hcm_agent = None
+_itsm_agent = None
+
+
+def get_hcm_agent() -> WorkWeekHCMAgent:
+    global _hcm_agent
+    if _hcm_agent is None:
+        _hcm_agent = WorkWeekHCMAgent()
+    return _hcm_agent
+
+
+def get_itsm_agent() -> ServiceImmediatelyAgent:
+    global _itsm_agent
+    if _itsm_agent is None:
+        _itsm_agent = ServiceImmediatelyAgent()
+    return _itsm_agent
 
 
 class ChatRequest(BaseModel):
@@ -91,13 +104,13 @@ async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
             "workweek_hcm": {
                 "name": "WorkWeek HCM Agent",
                 "mcp_url": "https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/",
-                "model": hcm_agent.model_name,
+                "model": os.getenv("MODEL_NAME", "gemini-3.7-flash"),
                 "status": "ONLINE",
             },
             "service_immediately": {
                 "name": "ServiceImmediately Agent",
                 "mcp_url": "https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/",
-                "model": itsm_agent.model_name,
+                "model": os.getenv("MODEL_NAME", "gemini-3.7-flash"),
                 "status": "ONLINE",
             },
         },
@@ -148,13 +161,15 @@ async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header
 
     try:
         if target == "service_immediately":
-            result = await itsm_agent.run(
+            agent = get_itsm_agent()
+            result = await agent.run(
                 user_prompt=req.message,
                 employee_id=req.employee_id or "EMP-545",
                 mcp_token=token,
             )
         else:
-            result = await hcm_agent.run(
+            agent = get_hcm_agent()
+            result = await agent.run(
                 user_prompt=req.message,
                 employee_id=req.employee_id or "EMP-545",
                 mcp_token=token,
