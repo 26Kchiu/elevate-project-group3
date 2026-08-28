@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from google.adk.agents import Agent
+
 from src.agents.policy_agent.prompts import (
     DEFAULT_API_ENDPOINT,
     DEFAULT_DATA_AGENT_ID,
@@ -266,4 +268,20 @@ class PolicyAgent:
 
 
 policy_agent = PolicyAgent()
+
+# ADK Root Agent for `adk web` / `adk run` integration
+root_agent = Agent(
+    name="policy_agent",
+    model=os.getenv("MODEL_NAME", "gemini-2.5-flash"),
+    instruction=POLICY_AGENT_SYSTEM_PROMPT,
+    description="HR Policy Agent providing grounded policy answers and entitlement reasoning via BigQuery Conversational Analytics.",
+    tools=[
+        call_bigquery_conversational_api,
+        search_hr_policy,
+        get_policy_clause,
+        resolve_policy_entitlement,
+    ],
+)
+
+agent = root_agent
 
