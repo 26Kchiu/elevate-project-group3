@@ -27,9 +27,42 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
   aiplatform.googleapis.com \
+  storage.googleapis.com \
   --project="$PROJECT_ID"
 
-# 2. Ensure Artifact Registry repository exists
+# Retrieve Project Number for Cloud Build IAM bindings
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null || echo "1040698382265")
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+
+echo "[*] Project Number: $PROJECT_NUMBER"
+echo "[*] Granting Storage and Artifact Registry permissions to Cloud Build service accounts..."
+
+# 2. Fix Cloud Build Storage & Artifact Registry Permissions
+for SA in "$COMPUTE_SA" "$CLOUDBUILD_SA"; do
+  echo "  - Binding roles for $SA..."
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA}" \
+    --role="roles/storage.objectViewer" \
+    --condition=None >/dev/null 2>&1 || true
+
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA}" \
+    --role="roles/storage.admin" \
+    --condition=None >/dev/null 2>&1 || true
+
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA}" \
+    --role="roles/logging.logWriter" \
+    --condition=None >/dev/null 2>&1 || true
+
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA}" \
+    --role="roles/artifactregistry.writer" \
+    --condition=None >/dev/null 2>&1 || true
+done
+
+# 3. Ensure Artifact Registry repository exists
 echo "[*] Checking Artifact Registry repository '$REPO_NAME'..."
 if ! gcloud artifacts repositories describe "$REPO_NAME" --location="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
   echo "[*] Creating Artifact Registry repository '$REPO_NAME'..."
@@ -42,8 +75,8 @@ else
   echo "[✓] Artifact Registry repository '$REPO_NAME' already exists."
 fi
 
-# 3. Configure Runtime Service Account & Vertex AI IAM
-echo "[*] Checking Service Account '$SA_NAME'..."
+# 4. Configure Runtime Service Account & Vertex AI IAM
+echo "[*] Checking Runtime Service Account '$SA_NAME'..."
 if ! gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
   echo "[*] Creating Service Account '$SA_NAME'..."
   gcloud iam service-accounts create "$SA_NAME" \
@@ -59,14 +92,14 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --role="roles/aiplatform.user" \
   --condition=None >/dev/null 2>&1 || true
 
-# 4. Build and Push Container Image via Cloud Build
+# 5. Build and Push Container Image via Cloud Build
 echo "[*] Submitting Cloud Build container build..."
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 gcloud builds submit "$DIR" \
   --tag="$IMAGE_URI" \
   --project="$PROJECT_ID"
 
-# 5. Deploy to Cloud Run (Public Internet Access)
+# 6. Deploy to Cloud Run (Public Internet Access)
 echo "[*] Deploying to Cloud Run with public Internet access..."
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE_URI" \
