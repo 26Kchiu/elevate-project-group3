@@ -11,10 +11,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Ensure non-blocking GenAI client setup
-if "GEMINI_API_KEY" not in os.environ:
-    os.environ["GEMINI_API_KEY"] = "default-vertex-mode"
-
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -164,8 +160,13 @@ async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header
                 mcp_token=token,
             )
         return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agent execution error: {str(e)}")
+    except BaseException as e:
+        # Extract underlying sub-exceptions if wrapped in ExceptionGroup
+        err_msg = str(e)
+        if hasattr(e, "exceptions") and e.exceptions:
+            sub_msgs = [str(sub) for sub in e.exceptions]
+            err_msg = " | ".join(sub_msgs)
+        raise HTTPException(status_code=500, detail=f"Agent execution error: {err_msg}")
 
 
 if __name__ == "__main__":
