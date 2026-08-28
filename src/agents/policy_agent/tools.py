@@ -101,77 +101,76 @@ async def call_bigquery_conversational_api(
         "X-Goog-User-Project": project_id,
     }
 
-    # Try standard request payload structures for geminidataanalytics
-    payload_variations = [
-        {
-            "query": query,
-            "dataAgent": f"projects/{project_id}/locations/{api_location}/dataAgents/{data_agent_id}" if data_agent_id else None,
-            "conversation": conversation_id,
-        },
-        {
-            "message": {
+    payload = {
+        "parent": f"projects/{project_id}/locations/{api_location}",
+        "messages": [
+            {
                 "userMessage": {
                     "text": query
                 }
-            },
-            "dataAgent": f"projects/{project_id}/locations/{api_location}/dataAgents/{data_agent_id}" if data_agent_id else None,
-            "conversation": conversation_id,
-        },
-        {
-            "prompt": query,
-        }
-    ]
+            }
+        ],
+    }
+    if data_agent_id:
+        # Check if data_agent_id already contains full resource name
+        if "/" in data_agent_id:
+            agent_resource = data_agent_id
+        else:
+            agent_resource = f"projects/{project_id}/locations/{api_location}/dataAgents/{data_agent_id}"
+        payload["dataAgentContext"] = {"dataAgent": agent_resource}
+
+    if conversation_id:
+        payload["conversation"] = conversation_id
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            last_resp = None
-            for p in payload_variations:
-                # Clean None values
-                clean_payload = {k: v for k, v in p.items() if v is not None}
-                resp = await client.post(url, headers=headers, json=clean_payload)
-                last_resp = resp
-                if resp.status_code == 200:
-                    data = resp.json()
-                    
-                    extracted_texts = []
-                    citations = []
-                    sql_queries = []
-                    
-                    messages = data.get("messages", []) if isinstance(data, dict) else data
-                    if isinstance(messages, list):
-                        for msg in messages:
-                            if isinstance(msg, dict):
-                                sys_msg = msg.get("systemMessage", {}) or msg.get("message", {})
-                                if "text" in sys_msg:
-                                    extracted_texts.append(sys_msg["text"])
-                                if "query" in sys_msg:
-                                    sql_queries.append(sys_msg["query"])
-                                if "citations" in sys_msg:
-                                    citations.extend(sys_msg["citations"])
-                    elif isinstance(data, dict):
-                        sys_msg = data.get("systemMessage") or data.get("message", {}) or data.get("response", {})
-                        if isinstance(sys_msg, dict) and "text" in sys_msg:
-                            extracted_texts.append(sys_msg["text"])
-                        elif "text" in data:
-                            extracted_texts.append(data["text"])
-                        elif "response" in data and isinstance(data["response"], str):
-                            extracted_texts.append(data["response"])
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
 
-                    final_text = "\n\n".join(extracted_texts) if extracted_texts else str(data)
+                extracted_texts = []
+                citations = []
+                sql_queries = []
 
-                    return {
-                        "status": "SUCCESS",
-                        "text": final_text,
-                        "citations": citations,
-                        "sql_queries": sql_queries,
-                        "raw_response": data,
-                        "source": "BigQuery Conversational API",
-                    }
+                items = data if isinstance(data, list) else data.get("messages", [data])
+                for item in items:
+                    if isinstance(item, dict):
+                        sys_msg = item.get("systemMessage", {})
+                        text_obj = sys_msg.get("text", {})
+                        if isinstance(text_obj, dict):
+                            parts = text_obj.get("parts", [])
+                            text_type = text_obj.get("textType")
+                            if text_type == "FINAL_RESPONSE" and parts:
+                                extracted_texts.extend(parts)
+                        elif isinstance(text_obj, str):
+                            extracted_texts.append(text_obj)
+
+                        # Extract SQL
+                        data_block = sys_msg.get("data", {})
+                        if isinstance(data_block, dict):
+                            if "generatedSql" in data_block:
+                                sql_queries.append(data_block["generatedSql"])
+                            if "result" in data_block and isinstance(data_block["result"], dict):
+                                rows = data_block["result"].get("data", [])
+                                for row in rows:
+                                    if isinstance(row, dict) and "clause_title" in row:
+                                        citations.append(f"Altostrat Singapore Handbook, {row['clause_title']}")
+
+                final_text = "\n\n".join(extracted_texts) if extracted_texts else str(data)
+
+                return {
+                    "status": "SUCCESS",
+                    "text": final_text,
+                    "citations": citations,
+                    "sql_queries": sql_queries,
+                    "raw_response": data,
+                    "source": "BigQuery Conversational API",
+                }
 
             return {
                 "status": "API_ERROR",
-                "status_code": last_resp.status_code if last_resp else 400,
-                "error": last_resp.text if last_resp else "Failed all payload variants",
+                "status_code": resp.status_code,
+                "error": resp.text,
                 "source": "BigQuery Conversational API",
             }
 
@@ -292,13 +291,13 @@ class _SelfContainedGraphProvider:
         attributes = attributes or {}
         ent_node = None
         for e_id, e in self.entitlements.items():
-            if benefit_id.lower() in e_id.lower() or benefit_id.lower() in e.get("benefit_type", "").lower():
+            if e.get("benefit_id") == benefit_id:
                 ent_node = e
                 break
 
         if not ent_node:
             for e_id, e in self.entitlements.items():
-                if "vacation" in e_id.lower() or "leave" in e_id.lower():
+                if benefit_id.lower() in e_id.lower() or benefit_id.lower() in e.get("benefit_type", "").lower() or benefit_id.lower() in e.get("name", "").lower():
                     ent_node = e
                     break
 

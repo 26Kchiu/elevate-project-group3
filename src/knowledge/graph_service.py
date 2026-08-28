@@ -8,7 +8,7 @@ import json
 import os
 import re
 from typing import Any, Dict, List, Optional
-from ..config.settings import settings
+from ..shared.config import settings
 
 
 class GraphService:

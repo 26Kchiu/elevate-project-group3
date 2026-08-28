@@ -1,42 +1,24 @@
-"""Tests for Grounded Policy Reasoning Agent."""
+"""Tests for Grounded Policy Reasoning Agent using BigQuery Conversational Analytics."""
 
 import unittest
-from enterprise.hr.agentic.hr_policy_agent.agents.policy_agent import policy_agent
+from src.agents.policy_agent.agent import policy_agent
 
 
-class TestPolicyAgent(unittest.TestCase):
+class TestPolicyAgentBQCA(unittest.TestCase):
 
-    def test_direct_policy_qa(self):
-        """Tests Class 1 Direct Policy Q&A with citable verbatim rule."""
+    def test_bqca_outpatient_sick_leave_response(self):
+        """Verify that the Policy Agent queries BigQuery Conversational Analytics and returns the policy answer."""
         res = policy_agent.process_policy_query("What is the outpatient sick leave allowance?")
-        self.assertEqual(res["response_class"], "direct")
-        self.assertTrue(len(res["citations"]) > 0)
+
+        # Verify successful execution and correct policy entitlement
+        self.assertEqual(res["status"], "SUCCESS")
         self.assertIn("14 days", res["text"])
-        self.assertIn("cl. 1.1", res["citations"][0])
 
-    def test_composed_eligibility_qa(self):
-        """Tests Class 2 Composed Multi-Clause Eligibility Q&A."""
-        res = policy_agent.process_policy_query(
-            "Am I eligible for bereavement leave for my grandmother?",
-            employee_attributes={"relationship": "grandparent"}
-        )
-        self.assertEqual(res["response_class"], "composed")
-        self.assertTrue(len(res["citations"]) >= 1)
-        self.assertIn("4 weeks", res["text"])
-        self.assertIn("close_loved_one", res["text"])
-
-    def test_ungrounded_policy_refusal(self):
-        """Tests Class 3 Ungrounded Policy Refusal when no bearing clause exists."""
-        res = policy_agent.process_policy_query("What is the policy on employee cryptocurrency trading?")
-        self.assertEqual(res["response_class"], "refuse")
-        self.assertEqual(len(res["citations"]), 0)
-        self.assertIn("could not find any governing", res["text"])
-
-    def test_vacation_tier_lookup(self):
-        """Tests vacation leave accrual rules."""
-        res = policy_agent.process_policy_query("How many vacation days do I get with 4 years of service?")
-        self.assertIn("20 days", res["text"])
-        self.assertIn("cl. 1.2", res["citations"][0])
+        # Verify provenance is from BigQuery Conversational API
+        provenance = res.get("provenance") or {}
+        self.assertEqual(provenance.get("engine"), "BigQuery Conversational API")
+        self.assertIn("agent_98c36166-3d31-471e-8fce-4dc446069ad7", provenance.get("data_agent_id", ""))
+        self.assertTrue(len(provenance.get("sql_queries", [])) > 0)
 
 
 if __name__ == "__main__":

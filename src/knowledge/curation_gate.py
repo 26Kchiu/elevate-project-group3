@@ -9,7 +9,7 @@ Implements ADR-003 and Section 5.5 of SDD v2.0:
 
 import datetime
 from typing import Any, Dict, List, Optional
-from ..config.settings import settings
+from ..shared.config import settings
 
 
 class CurationGate:
