@@ -11,6 +11,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Disable mTLS environment configurations
+os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+
+# Avoid blocking gcloud call during WorkWeekHCMAgent._init_genai_client
+os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "vertex-auth-mode")
+
+import google.auth
+from google import genai
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -49,10 +58,35 @@ _hcm_agent = None
 _itsm_agent = None
 
 
+def extract_nested_exception(e: BaseException) -> str:
+    """Recursively unwrap ExceptionGroup or TaskGroup errors to get the root error."""
+    if hasattr(e, "exceptions") and e.exceptions:
+        return " | ".join(extract_nested_exception(sub) for sub in e.exceptions)
+    return str(e)
+
+
+def get_shared_genai_client() -> genai.Client:
+    """Create a non-blocking GenAI client using ADC credentials directly."""
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+    # If user provided a real Gemini API Key, use API key mode
+    user_api_key = os.environ.get("GEMINI_API_KEY")
+    if user_api_key and not user_api_key.startswith("vertex-"):
+        return genai.Client(api_key=user_api_key)
+
+    try:
+        creds, _ = google.auth.default()
+        return genai.Client(vertexai=True, project=project_id, location=location, credentials=creds)
+    except Exception:
+        return genai.Client(vertexai=True, project=project_id, location=location)
+
+
 def get_hcm_agent() -> WorkWeekHCMAgent:
     global _hcm_agent
     if _hcm_agent is None:
         _hcm_agent = WorkWeekHCMAgent()
+        _hcm_agent.genai_client = get_shared_genai_client()
     return _hcm_agent
 
 
@@ -60,6 +94,7 @@ def get_itsm_agent() -> ServiceImmediatelyAgent:
     global _itsm_agent
     if _itsm_agent is None:
         _itsm_agent = ServiceImmediatelyAgent()
+        _itsm_agent.genai_client = get_shared_genai_client()
     return _itsm_agent
 
 
@@ -176,11 +211,7 @@ async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header
             )
         return result
     except BaseException as e:
-        # Extract underlying sub-exceptions if wrapped in ExceptionGroup
-        err_msg = str(e)
-        if hasattr(e, "exceptions") and e.exceptions:
-            sub_msgs = [str(sub) for sub in e.exceptions]
-            err_msg = " | ".join(sub_msgs)
+        err_msg = extract_nested_exception(e)
         raise HTTPException(status_code=500, detail=f"Agent execution error: {err_msg}")
 
 
