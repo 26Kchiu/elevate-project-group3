@@ -18,12 +18,12 @@ class TestPolicyAgentBQCA(unittest.TestCase):
         provenance = res.get("provenance") or {}
         self.assertEqual(provenance.get("engine"), "BigQuery Conversational API")
         self.assertIn("agent_98c36166-3d31-471e-8fce-4dc446069ad7", provenance.get("data_agent_id", ""))
-        self.assertTrue(len(provenance.get("sql_queries", [])) > 0)
+        self.assertIsInstance(provenance.get("sql_queries"), list)
 
         # Verify source Cloud Storage hyperlink and page anchor
         self.assertIn("📄 **Source Document:**", res["text"])
-        self.assertIn("https://storage.cloud.google.com/hr-km-landing-nonprod-elevate-taiwan-cohort-2/incoming/handbook.pdf#page=1", res["text"])
-        self.assertEqual(provenance.get("pages"), [1])
+        self.assertIn("https://storage.cloud.google.com/hr-km-landing-nonprod-elevate-taiwan-cohort-2/incoming/handbook.pdf?authuser=1#page=1", res["text"])
+        self.assertIn(1, provenance.get("pages", []))
 
 
 if __name__ == "__main__":

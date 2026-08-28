@@ -22,7 +22,7 @@ DEFAULT_POLICY_DOCUMENT_PATH = os.getenv(
 )
 DEFAULT_POLICY_DOCUMENT_BASE_URL = os.getenv(
     "POLICY_DOCUMENT_STORAGE_BASE_URL",
-    f"https://storage.cloud.google.com/{DEFAULT_POLICY_DOCUMENT_BUCKET}/{DEFAULT_POLICY_DOCUMENT_PATH}",
+    f"https://storage.cloud.google.com/{DEFAULT_POLICY_DOCUMENT_BUCKET}/{DEFAULT_POLICY_DOCUMENT_PATH}?authuser=1",
 )
 
 POLICY_AGENT_SYSTEM_PROMPT = """You are the Grounded HR Policy Reasoning Agent for Altostrat Singapore.
