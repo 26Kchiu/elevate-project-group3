@@ -2,7 +2,26 @@
 
 let activeEmployeeId = "";
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    const ssoRes = await fetch("/api/auth/sso-status");
+    if (ssoRes.ok) {
+      const ssoData = await ssoRes.json();
+      const ldap = ssoData.ldap || "ansonk";
+      const tokenRes = await fetch("/api/mcp-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ldap: ldap })
+      });
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        const input = document.getElementById("mcpTokenInput");
+        if (input) input.value = tokenData.token || "";
+      }
+    }
+  } catch (e) {
+    console.error("SSO initialization error:", e);
+  }
   loadProfileFromToken();
 });
 

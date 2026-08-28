@@ -2,9 +2,33 @@
  * Frontend logic for WorkWeek HCM Agent Web GUI.
  */
 
-document.addEventListener("DOMContentLoaded", () => {
-  syncIdentity();
+document.addEventListener("DOMContentLoaded", async () => {
+  await initSSOAndSession();
 });
+
+async function initSSOAndSession() {
+  try {
+    const ssoRes = await fetch("/api/auth/sso-status");
+    if (ssoRes.ok) {
+      const ssoData = await ssoRes.json();
+      const ldap = ssoData.ldap || "ansonk";
+      const tokenRes = await fetch("/api/mcp-tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ldap: ldap })
+      });
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        const input = document.getElementById("mcpTokenInput");
+        if (input) input.value = tokenData.token || "";
+      }
+    }
+  } catch (err) {
+    console.error("SSO init failed:", err);
+  } finally {
+    await syncIdentity();
+  }
+}
 
 function toggleTokenVisibility() {
   const tokenInput = document.getElementById("mcpTokenInput");

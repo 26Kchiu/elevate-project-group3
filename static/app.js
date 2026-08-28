@@ -1,11 +1,12 @@
 /**
  * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
+ * Incorporates SSO authentication with IdP (login.corp.google.com) and dynamic MCP token minting.
  */
 
 let currentAgentMode = "auto"; // "auto", "workweek", "service_immediately"
 
-document.addEventListener("DOMContentLoaded", () => {
-  syncAllServices();
+document.addEventListener("DOMContentLoaded", async () => {
+  await initSSOAndSession();
 });
 
 function toggleTokenVisibility() {
@@ -32,6 +33,73 @@ function setAgentMode(mode) {
 
   document.getElementById("activeModeChip").innerHTML = `<span class="icon">${mode === "auto" ? "🤖" : (mode === "workweek" ? "💼" : "🎫")}</span> ${modeLabels[mode] || mode}`;
   document.getElementById("activeAgentSubtitle").innerHTML = subtitleLabels[mode] || "";
+}
+
+/**
+ * Validates SSO authentication against login.corp.google.com and generates
+ * a user-bound MCP Token via POST /api/mcp-tokens with user's LDAP.
+ */
+async function initSSOAndSession() {
+  try {
+    // 1. Validate SSO status to login.corp.google.com
+    const ssoRes = await fetch("/api/auth/sso-status");
+    if (ssoRes.ok) {
+      const ssoData = await ssoRes.json();
+      console.log("SSO Authenticated:", ssoData);
+
+      // Update UI elements with SSO profile
+      const idpBadge = document.getElementById("ssoIdpBadge");
+      if (idpBadge) idpBadge.innerText = ssoData.idp || "login.corp.google.com";
+
+      const ldapLabel = document.getElementById("ssoLdapLabel");
+      if (ldapLabel) ldapLabel.innerText = ssoData.ldap || "ansonk";
+
+      const userName = document.getElementById("userName");
+      if (userName) userName.innerText = ssoData.display_name || ssoData.ldap;
+
+      const userRole = document.getElementById("userRole");
+      if (userRole) userRole.innerText = ssoData.email || `${ssoData.ldap}@google.com`;
+
+      const userIdBadge = document.getElementById("userIdBadge");
+      if (userIdBadge) userIdBadge.innerText = `ID: ${ssoData.employee_id || 'EMP-545'}`;
+
+      const avatar = document.getElementById("userAvatar");
+      if (avatar && ssoData.display_name) {
+        const initials = ssoData.display_name
+          .split(" ")
+          .filter(Boolean)
+          .map(w => w[0])
+          .join("")
+          .toUpperCase()
+          .slice(0, 2);
+        avatar.innerText = initials || "GO";
+      }
+
+      // 2. Generate MCP Token by calling /api/mcp-tokens with LDAP in JSON body
+      const userLdap = ssoData.ldap || "ansonk";
+      const tokenRes = await fetch("/api/mcp-tokens", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ ldap: userLdap })
+      });
+
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        const generatedToken = tokenData.token || "";
+        const tokenInput = document.getElementById("mcpTokenInput");
+        if (tokenInput) {
+          tokenInput.value = generatedToken;
+        }
+        console.log("Dynamically minted MCP Token for LDAP", userLdap);
+      }
+    }
+  } catch (err) {
+    console.error("SSO and Token initialization error:", err);
+  } finally {
+    await syncAllServices();
+  }
 }
 
 async function syncAllServices() {

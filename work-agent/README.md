@@ -16,7 +16,7 @@ Developed in compliance with the **Finalized Software Design Document (SDD v2.0.
    - Mutating actions (e.g. Leave Submissions, Contact Info Updates) are staged with a **SHA-256 cryptographic payload hash** and a single-use 5-minute confirmation token.
    - Prevents unauthorized writes, prompt injections, and accidental commits.
 4. **Model Context Protocol (MCP) Integration:**
-   - Configured to communicate via Model Context Protocol (MCP) over SSE/HTTP to the WorkWeek SaaS service (`https://mock-saas.aishprabhat.demo.altostrat.com/`) using token `mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg`.
+   - Configured to communicate via Model Context Protocol (MCP) over SSE/HTTP to the WorkWeek SaaS service (`https://mock-saas.aishprabhat.demo.altostrat.com/`) using dynamically minted MCP tokens derived from Corporate SSO sessions (`login.corp.google.com`).
    - Built-in resilient local emulator fallback for offline development, local testing, and automated CI/CD pipelines.
 5. **Interactive Web GUI:**
    - Modern, responsive chat UI featuring real-time persona switching, system-of-record badges, interactive confirmation cards, and quick action prompts.

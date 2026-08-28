@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 WORKWEEK_BASE_URL = os.getenv("WORKWEEK_BASE_URL", "https://mock-saas.aishprabhat.demo.altostrat.com")
 WORKWEEK_MCP_PATH = "/work-week/mcp/"
-DEFAULT_MCP_TOKEN = os.getenv("WORKWEEK_MCP_TOKEN", "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg")
+DEFAULT_MCP_TOKEN = os.getenv("WORKWEEK_MCP_TOKEN", "")
 
 PHONE_REGEX = re.compile(r"^\+?[\d\s\-()]{7,20}$")
 
@@ -60,9 +60,10 @@ class WorkWeekMCPClient:
 
     def _init_mock_database(self):
         """Initializes default master records in WorkWeek SaaS."""
-        # Seed record for the primary test token
+        # Seed record for default employee
         emp_id = "EMP-10492"
-        self._token_sessions[self.default_token] = emp_id
+        if self.default_token:
+            self._token_sessions[self.default_token] = emp_id
         self._store[emp_id] = {
             "employee_id": emp_id,
             "name": "Harry Lin",

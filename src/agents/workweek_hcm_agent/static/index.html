@@ -21,16 +21,16 @@
         </div>
       </div>
 
-      <!-- MCP Personal Access Token (PAT) Configuration -->
-      <div class="section-title">MCP CREDENTIAL TOKEN</div>
+      <!-- Dynamic MCP Token Configuration -->
+      <div class="section-title">MCP SESSION TOKEN</div>
       <div class="token-config-box">
-        <label for="mcpTokenInput">PAT Token:</label>
+        <label for="mcpTokenInput">Active MCP Token:</label>
         <div class="token-input-wrapper">
           <input
             type="password"
             id="mcpTokenInput"
-            value="mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
-            placeholder="mcp__..."
+            value=""
+            placeholder="SSO Token generated from LDAP..."
           />
           <button type="button" class="btn-toggle-token" onclick="toggleTokenVisibility()">👁️</button>
         </div>

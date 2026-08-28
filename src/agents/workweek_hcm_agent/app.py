@@ -17,6 +17,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.shared.auth import (
+    validate_corp_sso,
+    generate_mcp_token,
+    resolve_token_identity,
+    CORP_IDP,
+)
 from src.agents.workweek_hcm_agent.agent import WorkWeekHCMAgent
 from src.agents.workweek_hcm_agent.tools import (
     DEFAULT_MCP_TOKEN,
@@ -34,7 +40,7 @@ from src.agents.workweek_hcm_agent.tools import (
 app = FastAPI(
     title="WorkWeek HCM Agent — Virtual Assistant",
     description="Interactive Web GUI and REST API connecting to WorkWeek SaaS MCP Server (/work-week/mcp/)",
-    version="1.0.0",
+    version="2.1.0",
 )
 
 app.add_middleware(
@@ -78,6 +84,25 @@ class UpdateProfileRequest(BaseModel):
     address: str
     phone: str
     mcp_token: Optional[str] = None
+
+
+class GenerateMCPTokenRequest(BaseModel):
+    ldap: str
+
+
+@app.get("/api/auth/sso-status")
+async def get_sso_status():
+    """Validate corporate SSO authentication status against login.corp.google.com."""
+    return validate_corp_sso()
+
+
+@app.post("/api/mcp-tokens")
+async def create_mcp_token(req: GenerateMCPTokenRequest):
+    """Generate dynamic MCP token bound to the SSO authenticated user LDAP."""
+    ldap = req.ldap.strip() if req.ldap else ""
+    if not ldap:
+        raise HTTPException(status_code=400, detail="Missing required 'ldap' parameter.")
+    return generate_mcp_token(ldap)
 
 
 @app.get("/")

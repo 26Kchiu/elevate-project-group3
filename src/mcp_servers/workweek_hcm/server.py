@@ -13,5 +13,7 @@ Supported MCP Tools:
 - cancel_leave_request: Cancels a leave request and refunds days
 """
 
-WORKWEEK_MCP_URL = "https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/"
-WORKWEEK_MCP_TOKEN = "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+import os
+
+WORKWEEK_MCP_URL = os.environ.get("WORKWEEK_MCP_URL", "https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/")
+WORKWEEK_MCP_TOKEN = os.environ.get("WORKWEEK_MCP_TOKEN", "")

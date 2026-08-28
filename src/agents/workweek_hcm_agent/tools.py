@@ -13,7 +13,7 @@ DEFAULT_MCP_URL = os.environ.get(
 )
 DEFAULT_MCP_TOKEN = os.environ.get(
     "WORKWEEK_MCP_TOKEN",
-    "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg",
+    "",
 )
 
 ACCESS_DENIED_MESSAGE = (

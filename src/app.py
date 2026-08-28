@@ -20,13 +20,21 @@ os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "vertex-auth-mod
 
 import google.auth
 from google import genai
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Import both specialist agents (without modifying workweek_hcm_agent codebase)
+# Import SSO & Token management
+from src.shared.auth import (
+    validate_corp_sso,
+    generate_mcp_token,
+    resolve_token_identity,
+    CORP_IDP,
+)
+
+# Import both specialist agents
 from src.agents.workweek_hcm_agent import WorkWeekHCMAgent
 from src.agents.service_immediately_agent import ServiceImmediatelyAgent
 from src.agents.service_immediately_agent.tools import list_tickets as itsm_list_tickets
@@ -38,8 +46,8 @@ from src.agents.workweek_hcm_agent.tools import (
 
 app = FastAPI(
     title="Elevate HR & ITSM Multi-Agent System",
-    description="Unified Portal for WorkWeek HCM Agent & ServiceImmediately ITSM Agent",
-    version="2.0.0",
+    description="Unified Portal for WorkWeek HCM Agent & ServiceImmediately ITSM Agent with Corp SSO",
+    version="2.1.0",
 )
 
 app.add_middleware(
@@ -105,6 +113,10 @@ class ChatRequest(BaseModel):
     mcp_token: Optional[str] = None
 
 
+class GenerateMCPTokenRequest(BaseModel):
+    ldap: str
+
+
 def auto_route_query(query: str) -> str:
     """Intelligently route query to the right specialist agent based on intent keywords."""
     q_lower = query.lower()
@@ -119,6 +131,26 @@ def auto_route_query(query: str) -> str:
     return "workweek"
 
 
+def resolve_effective_token_and_employee(
+    mcp_token_param: Optional[str] = None,
+    x_mcp_token_header: Optional[str] = None,
+    explicit_employee_id: Optional[str] = None,
+) -> tuple[str, str, Dict[str, Any]]:
+    """Dynamically resolves token and employee identity from headers or active SSO session."""
+    raw_token = (mcp_token_param or x_mcp_token_header or "").strip()
+    if not raw_token:
+        # Validate SSO and generate token for logged-in LDAP
+        sso_info = validate_corp_sso()
+        token_record = generate_mcp_token(sso_info["ldap"])
+        raw_token = token_record["token"]
+        identity = token_record
+    else:
+        identity = resolve_token_identity(raw_token)
+
+    emp_id = explicit_employee_id or identity.get("employee_id") or "EMP-545"
+    return raw_token, emp_id, identity
+
+
 @app.get("/")
 async def serve_index():
     """Serve the unified Web GUI."""
@@ -128,13 +160,34 @@ async def serve_index():
     return FileResponse(str(index_file))
 
 
+@app.get("/api/auth/sso-status")
+async def get_sso_status(request: Request):
+    """Validate corporate SSO authentication status against login.corp.google.com."""
+    headers_dict = dict(request.headers)
+    sso_data = validate_corp_sso(headers_dict)
+    return sso_data
+
+
+@app.post("/api/mcp-tokens")
+async def create_mcp_token(req: GenerateMCPTokenRequest):
+    """Generate dynamic MCP token bound to the SSO authenticated user LDAP."""
+    ldap = req.ldap.strip() if req.ldap else ""
+    if not ldap:
+        raise HTTPException(status_code=400, detail="Missing required 'ldap' parameter in request body.")
+    token_record = generate_mcp_token(ldap)
+    return token_record
+
+
 @app.get("/api/status")
 async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
     """Check connectivity and session info for both WorkWeek and ServiceImmediately MCP servers."""
-    token = x_mcp_token or "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+    token, emp_id, identity = resolve_effective_token_and_employee(x_mcp_token_header=x_mcp_token)
     return {
         "status": "HEALTHY",
-        "authenticated_employee_id": "EMP-545",
+        "authenticated_idp": CORP_IDP,
+        "authenticated_ldap": identity.get("ldap", "ansonk"),
+        "authenticated_employee_id": emp_id,
+        "user_profile": identity,
         "agents": {
             "workweek_hcm": {
                 "name": "WorkWeek HCM Agent",
@@ -155,10 +208,10 @@ async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
 @app.get("/api/hcm/profile")
 async def get_hcm_profile(x_mcp_token: Optional[str] = Header(None)):
     """Fetch WorkWeek personal contact info."""
-    token = x_mcp_token or "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+    token, emp_id, _ = resolve_effective_token_and_employee(x_mcp_token_header=x_mcp_token)
     try:
-        raw_output = await hcm_get_profile(employee_id="EMP-545", mcp_token=token)
-        return {"employee_id": "EMP-545", "raw_output": raw_output}
+        raw_output = await hcm_get_profile(employee_id=emp_id, mcp_token=token)
+        return {"employee_id": emp_id, "raw_output": raw_output}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -166,10 +219,10 @@ async def get_hcm_profile(x_mcp_token: Optional[str] = Header(None)):
 @app.get("/api/hcm/balances")
 async def get_hcm_balances(x_mcp_token: Optional[str] = Header(None)):
     """Fetch WorkWeek leave balances."""
-    token = x_mcp_token or "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+    token, emp_id, _ = resolve_effective_token_and_employee(x_mcp_token_header=x_mcp_token)
     try:
-        raw_output = await hcm_get_balances(employee_id="EMP-545", mcp_token=token)
-        return {"employee_id": "EMP-545", "balances_text": raw_output}
+        raw_output = await hcm_get_balances(employee_id=emp_id, mcp_token=token)
+        return {"employee_id": emp_id, "balances_text": raw_output}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -177,10 +230,10 @@ async def get_hcm_balances(x_mcp_token: Optional[str] = Header(None)):
 @app.get("/api/itsm/tickets")
 async def get_itsm_tickets(x_mcp_token: Optional[str] = Header(None)):
     """Fetch ServiceImmediately incident tickets."""
-    token = x_mcp_token or "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+    token, emp_id, _ = resolve_effective_token_and_employee(x_mcp_token_header=x_mcp_token)
     try:
-        raw_output = await itsm_list_tickets(employee_id="EMP-545", mcp_token=token)
-        return {"employee_id": "EMP-545", "tickets_raw": raw_output}
+        raw_output = await itsm_list_tickets(employee_id=emp_id, mcp_token=token)
+        return {"employee_id": emp_id, "tickets_raw": raw_output}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -188,7 +241,11 @@ async def get_itsm_tickets(x_mcp_token: Optional[str] = Header(None)):
 @app.post("/api/chat")
 async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header(None)):
     """Interactive multi-agent chat endpoint."""
-    token = req.mcp_token or x_mcp_token or "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+    token, emp_id, _ = resolve_effective_token_and_employee(
+        mcp_token_param=req.mcp_token,
+        x_mcp_token_header=x_mcp_token,
+        explicit_employee_id=req.employee_id,
+    )
     target = req.agent_target or "auto"
 
     if target == "auto":
@@ -199,14 +256,14 @@ async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header
             agent = get_itsm_agent()
             result = await agent.run(
                 user_prompt=req.message,
-                employee_id=req.employee_id or "EMP-545",
+                employee_id=emp_id,
                 mcp_token=token,
             )
         else:
             agent = get_hcm_agent()
             result = await agent.run(
                 user_prompt=req.message,
-                employee_id=req.employee_id or "EMP-545",
+                employee_id=emp_id,
                 mcp_token=token,
             )
         return result
