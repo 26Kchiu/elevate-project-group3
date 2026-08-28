@@ -1,16 +1,27 @@
 /**
  * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
+ * Features: Auto-Model Selection, Multi-Language Alignment, and Speech-to-Text (Voice Input).
  */
 
 let currentAgentMode = "auto"; // "auto", "workweek", "service_immediately"
+let currentModelChoice = "auto"; // "auto", "gemini-3.7-flash", "gemini-2.5-flash", etc.
+let recognition = null;
+let isRecording = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   syncAllServices();
+  initSpeechRecognition();
 });
 
-function toggleTokenVisibility() {
-  const tokenInput = document.getElementById("mcpTokenInput");
-  tokenInput.type = tokenInput.type === "password" ? "text" : "password";
+function handleModelChange() {
+  const selector = document.getElementById("modelSelector");
+  currentModelChoice = selector.value;
+  const chip = document.getElementById("modelChip");
+  if (currentModelChoice === "auto") {
+    chip.innerHTML = `<span class="icon">🤖</span> Auto Gemini`;
+  } else {
+    chip.innerHTML = `<span class="icon">⚡</span> ${currentModelChoice}`;
+  }
 }
 
 function setAgentMode(mode) {
@@ -19,29 +30,115 @@ function setAgentMode(mode) {
   document.getElementById("btnModeHcm").classList.toggle("active", mode === "workweek");
   document.getElementById("btnModeItsm").classList.toggle("active", mode === "service_immediately");
 
-  const modeLabels = {
-    "auto": "🤖 Auto-Route Mode",
-    "workweek": "💼 WorkWeek HCM Mode",
-    "service_immediately": "🎫 ServiceImmediately Mode"
-  };
   const subtitleLabels = {
     "auto": "Interactive Assistant &bull; Auto-Routing to WorkWeek HCM &amp; ServiceImmediately ITSM",
     "workweek": "Dedicated Specialist &bull; WorkWeek HCM Agent (/work-week/mcp/)",
     "service_immediately": "Dedicated Specialist &bull; ServiceImmediately ITSM Agent (/service-immediately/mcp/)"
   };
 
-  document.getElementById("activeModeChip").innerHTML = `<span class="icon">${mode === "auto" ? "🤖" : (mode === "workweek" ? "💼" : "🎫")}</span> ${modeLabels[mode] || mode}`;
   document.getElementById("activeAgentSubtitle").innerHTML = subtitleLabels[mode] || "";
 }
 
-async function syncAllServices() {
-  const token = document.getElementById("mcpTokenInput").value.trim();
+/**
+ * Initialize Speech-To-Text (Web Speech API)
+ */
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.warn("Speech Recognition API is not supported in this browser.");
+    const micBtn = document.getElementById("micBtn");
+    if (micBtn) {
+      micBtn.title = "Speech-to-Text not supported in this browser (Use Chrome / Edge)";
+      micBtn.style.opacity = "0.5";
+    }
+    return;
+  }
 
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  // Automatically adapt to user's system/browser language (supports zh-TW, zh-CN, en-US, etc.)
+  recognition.lang = navigator.language || "en-US";
+
+  recognition.onstart = () => {
+    isRecording = true;
+    updateVoiceUI(true);
+  };
+
+  recognition.onresult = (event) => {
+    let finalTranscript = "";
+    let interimTranscript = "";
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+
+    const input = document.getElementById("messageInput");
+    if (finalTranscript) {
+      input.value = (input.value ? input.value + " " : "") + finalTranscript;
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error:", event.error);
+    stopSpeechRecognition();
+  };
+
+  recognition.onend = () => {
+    isRecording = false;
+    updateVoiceUI(false);
+  };
+}
+
+function toggleSpeechRecognition() {
+  if (!recognition) {
+    alert("Speech recognition is not supported in your browser. Please use Google Chrome or Microsoft Edge.");
+    return;
+  }
+  if (isRecording) {
+    stopSpeechRecognition();
+  } else {
+    try {
+      recognition.lang = navigator.language || "en-US";
+      recognition.start();
+    } catch (err) {
+      console.error("Error starting speech recognition:", err);
+    }
+  }
+}
+
+function stopSpeechRecognition() {
+  if (recognition && isRecording) {
+    recognition.stop();
+  }
+  isRecording = false;
+  updateVoiceUI(false);
+}
+
+function updateVoiceUI(recording) {
+  const micBtn = document.getElementById("micBtn");
+  const micIcon = document.getElementById("micIcon");
+  const banner = document.getElementById("voiceBanner");
+
+  if (recording) {
+    micBtn.classList.add("recording");
+    micIcon.innerText = "⏹️";
+    banner.style.display = "flex";
+  } else {
+    micBtn.classList.remove("recording");
+    micIcon.innerText = "🎙️";
+    banner.style.display = "none";
+  }
+}
+
+async function syncAllServices() {
   try {
     // 1. Fetch HCM Balances
-    const balRes = await fetch("/api/hcm/balances", {
-      headers: { "X-MCP-Token": token }
-    });
+    const balRes = await fetch("/api/hcm/balances");
     if (balRes.ok) {
       const balData = await balRes.json();
       const text = balData.balances_text || "";
@@ -59,9 +156,7 @@ async function syncAllServices() {
     }
 
     // 2. Fetch ITSM Tickets
-    const itsmRes = await fetch("/api/itsm/tickets", {
-      headers: { "X-MCP-Token": token }
-    });
+    const itsmRes = await fetch("/api/itsm/tickets");
     if (itsmRes.ok) {
       const itsmData = await itsmRes.json();
       let tickets = [];
@@ -97,6 +192,8 @@ function handleKeyDown(e) {
 
 async function handleFormSubmit(e) {
   if (e) e.preventDefault();
+  if (isRecording) stopSpeechRecognition();
+
   const input = document.getElementById("messageInput");
   const text = input.value.trim();
   if (!text) return;
@@ -108,19 +205,17 @@ async function handleFormSubmit(e) {
   sendBtn.disabled = true;
 
   const typingId = appendTypingIndicator();
-  const token = document.getElementById("mcpTokenInput").value.trim();
 
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "X-MCP-Token": token
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         message: text,
         agent_target: currentAgentMode,
-        mcp_token: token
+        model: currentModelChoice
       })
     });
 
@@ -135,7 +230,7 @@ async function handleFormSubmit(e) {
     const data = await res.json();
     appendAgentResponse(data);
 
-    // Refresh counters after action
+    // Refresh dashboard counters
     syncAllServices();
   } catch (err) {
     removeMessage(typingId);
@@ -160,7 +255,7 @@ function appendTypingIndicator() {
   const id = "typing-" + Date.now();
   row.id = id;
   row.className = "message-row agent";
-  row.innerHTML = `<div class="agent-bubble"><em>⚡ Multi-Agent Hub is dispatching to specialist MCP server...</em></div>`;
+  row.innerHTML = `<div class="agent-bubble"><em>⚡ Multi-Agent is analyzing intent and executing SaaS MCP tools...</em></div>`;
   stream.appendChild(row);
   stream.scrollTop = stream.scrollHeight;
   return id;
@@ -185,7 +280,7 @@ function appendAgentResponse(data) {
   let html = `
     <div class="agent-bubble">
       <div class="${tagClass}">
-        <span>${tagIcon}</span> ${escapeHtml(agentName)} &bull; ${escapeHtml(data.model || "Gemini 3.7 Flash")}
+        <span>${tagIcon}</span> ${escapeHtml(agentName)} &bull; ${escapeHtml(data.model || "Gemini")}
       </div>
       <div>${formattedReply}</div>
   `;
@@ -222,7 +317,7 @@ function clearChat() {
   stream.innerHTML = `
     <div class="message-row system">
       <div class="system-bubble">
-        Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries.
+        Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries. (支援多國語言與語音輸入)
       </div>
     </div>
   `;

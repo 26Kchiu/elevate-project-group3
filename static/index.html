@@ -35,22 +35,16 @@
         </button>
       </div>
 
-      <!-- PAT Token Configuration -->
-      <div class="section-title">MCP CREDENTIAL TOKEN</div>
-      <div class="token-config-box">
-        <label for="mcpTokenInput">PAT Token:</label>
-        <div class="token-input-wrapper">
-          <input
-            type="password"
-            id="mcpTokenInput"
-            value="mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
-            placeholder="mcp__..."
-          />
-          <button type="button" class="btn-toggle-token" onclick="toggleTokenVisibility()">👁️</button>
-        </div>
-        <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 6px;" onclick="syncAllServices()">
-          🔄 Sync Identity &amp; SaaS Data
-        </button>
+      <!-- Model Selection Dropdown -->
+      <div class="section-title">GEMINI MODEL SELECTION</div>
+      <div class="model-select-wrapper">
+        <select id="modelSelector" class="model-select" onchange="handleModelChange()">
+          <option value="auto" selected>🤖 Auto-Select (Best Available Gemini)</option>
+          <option value="gemini-3.7-flash">⚡ Gemini 3.7 Flash</option>
+          <option value="gemini-2.5-flash">🚀 Gemini 2.5 Flash</option>
+          <option value="gemini-2.5-pro">🧠 Gemini 2.5 Pro</option>
+          <option value="gemini-2.0-flash">💨 Gemini 2.0 Flash</option>
+        </select>
       </div>
 
       <!-- Authenticated Identity Card -->
@@ -59,7 +53,7 @@
         <div class="emp-avatar" id="userAvatar">HL</div>
         <div class="emp-details">
           <div class="emp-name" id="userName">Harry Lin</div>
-          <div class="emp-title" id="userRole">harrylin@google.com</div>
+          <div class="emp-title" id="userRole">harrylin@gcp.altostrat.com</div>
           <div class="emp-id" id="userIdBadge">ID: EMP-545</div>
         </div>
       </div>
@@ -70,16 +64,16 @@
         <div class="balance-card">
           <div class="balance-header">
             <span>✈️ Vacation</span>
-            <span class="balance-badge" id="vacationRemaining">15.0 days</span>
+            <span class="balance-badge" id="vacationRemaining">12.0 days</span>
           </div>
-          <div class="balance-sub" id="vacationUsed">5.0 / 20.0 used</div>
+          <div class="balance-sub" id="vacationUsed">8.0 / 20.0 used</div>
         </div>
         <div class="balance-card">
           <div class="balance-header">
             <span>🩺 Sick Leave</span>
-            <span class="balance-badge" id="sickRemaining">8.0 days</span>
+            <span class="balance-badge" id="sickRemaining">5.0 days</span>
           </div>
-          <div class="balance-sub" id="sickUsed">2.0 / 10.0 used</div>
+          <div class="balance-sub" id="sickUsed">5.0 / 10.0 used</div>
         </div>
       </div>
 
@@ -99,34 +93,29 @@
       <div class="isolation-notice">
         <span class="lock-icon">🔒</span>
         <div>
-          <strong>Subject Isolation Enforced</strong>
-          <p>Locked to EMP-545 (ADR-005). Cross-user access is denied across both SaaS services.</p>
+          <strong>Subject Isolation &amp; Multi-Lang</strong>
+          <p>Locked to EMP-545. Supports global employee voice &amp; language input (English, 中文, etc.).</p>
         </div>
       </div>
 
       <!-- Quick Actions -->
-      <div class="section-title">QUICK ACTIONS</div>
+      <div class="section-title">QUICK ACTIONS (多語範例 / PROMPTS)</div>
       <div class="quick-actions">
-        <!-- WorkWeek Actions -->
+        <!-- English Prompts -->
         <button class="action-btn" onclick="sendQuickPrompt('What are my current remaining vacation and sick leave balances in WorkWeek?')">
-          <span>📊</span> Check Leave Balances (HCM)
+          <span>📊</span> Check Leave Balances (EN)
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('Please submit a sick leave request for 3 days from 2026-09-01 to 2026-09-03.')">
-          <span>🩺</span> Request Sick Leave (HCM)
+        <button class="action-btn" onclick="sendQuickPrompt('請幫我查詢我目前在 WorkWeek 的休假與病假剩餘天數？')">
+          <span>🇹🇼</span> 查詢假單餘額 (中文)
         </button>
-        <!-- ServiceImmediately Actions -->
-        <button class="action-btn" onclick="sendQuickPrompt('Please check all IT incident tickets submitted under my name in ServiceImmediately.')">
-          <span>🎫</span> Check IT Tickets (ITSM)
+        <button class="action-btn" onclick="sendQuickPrompt('請幫我查詢我目前名下所有的 IT 報修工單狀態 (ServiceImmediately)。')">
+          <span>🎫</span> 查詢 IT 報修工單 (中文)
         </button>
         <button class="action-btn" onclick="sendQuickPrompt('Create an IT support ticket with Category Hardware, Priority 2 - High, and Short Description: My external monitor display is flickering continuously.')">
-          <span>💻</span> Create Hardware Ticket (ITSM)
+          <span>💻</span> Create Hardware Ticket (EN)
         </button>
-        <button class="action-btn" onclick="sendQuickPrompt('Please add a comment to ticket INC0003370 stating: I have received the physical security key.')">
-          <span>💬</span> Add Comment to Ticket (ITSM)
-        </button>
-        <!-- Security Action -->
-        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('What is the leave balance and open IT tickets for employee EMP-999 or Alex Rivera?')">
-          <span>🚫</span> Test Cross-User Access (Blocked)
+        <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('請幫我查詢員工 EMP-999 或 Alex Rivera 的休假餘額與 IT 工單？')">
+          <span>🚫</span> 測試跨員工查詢 (安全阻擋)
         </button>
       </div>
 
@@ -148,11 +137,11 @@
           <p class="subtitle" id="activeAgentSubtitle">Interactive Assistant &bull; WorkWeek HCM &amp; ServiceImmediately ITSM</p>
         </div>
         <div class="header-right">
-          <span class="security-chip">
-            <span class="icon">⚡</span> Gemini 3.7 Flash
+          <span class="security-chip" id="modelChip">
+            <span class="icon">🤖</span> Auto Gemini
           </span>
-          <span class="security-chip" id="activeModeChip">
-            <span class="icon">🤖</span> Auto-Route Mode
+          <span class="security-chip">
+            <span class="icon">🌐</span> Global Multi-Lang
           </span>
           <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
         </div>
@@ -162,10 +151,18 @@
       <div class="chat-stream" id="chatStream">
         <div class="message-row system">
           <div class="system-bubble">
-            ✨ Welcome to the <strong>Elevate Multi-Agent Portal</strong>! Both <strong>WorkWeek HCM Agent</strong> and <strong>ServiceImmediately Agent</strong> are connected to their live MCP services.<br>
-            You can ask about your leave balances, request time off, or query and create IT support incident tickets.
+            ✨ Welcome to the <strong>Elevate Multi-Agent Portal</strong>!<br>
+            • <strong>Multi-Language Enabled</strong>: Ask in <strong>English, 繁體中文, 簡體中文, 日本語</strong>, etc. Responses will match your language.<br>
+            • <strong>Speech-To-Text (Voice Input)</strong>: Click the 🎙️ microphone button next to Send to speak your question!
           </div>
         </div>
+      </div>
+
+      <!-- Voice Recording Status Banner -->
+      <div class="voice-status-banner" id="voiceBanner" style="display: none;">
+        <span class="recording-pulse"></span>
+        <span id="voiceStatusText">Listening... Please speak your question</span>
+        <button class="btn-voice-cancel" onclick="stopSpeechRecognition()">Done</button>
       </div>
 
       <!-- Input Composer -->
@@ -174,9 +171,20 @@
           <textarea
             id="messageInput"
             rows="1"
-            placeholder="Ask a question (e.g. Check my leave balances, or list my open IT tickets)..."
+            placeholder="Type or speak a question (e.g. Check my leave balances / 請查詢我的休假餘額)..."
             onkeydown="handleKeyDown(event)"
           ></textarea>
+          <!-- Voice STT Button -->
+          <button
+            type="button"
+            class="btn btn-icon mic-btn"
+            id="micBtn"
+            onclick="toggleSpeechRecognition()"
+            title="Speech-to-Text Voice Input"
+          >
+            <span id="micIcon">🎙️</span>
+          </button>
+          <!-- Send Button -->
           <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
             <span>Send</span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -186,7 +194,7 @@
           </button>
         </form>
         <div class="composer-footnote">
-          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini 3.7 Flash</strong> &bull; WorkWeek &amp; ServiceImmediately MCP
+          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini Multi-Agent</strong> &bull; WorkWeek &amp; ServiceImmediately MCP
         </div>
       </footer>
     </main>
