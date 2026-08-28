@@ -15,10 +15,44 @@ from .prompts import (
     DEFAULT_API_ENDPOINT,
     DEFAULT_DATA_AGENT_ID,
     DEFAULT_LOCATION,
+    DEFAULT_POLICY_DOCUMENT_BASE_URL,
+    DEFAULT_POLICY_DOCUMENT_BUCKET,
+    DEFAULT_POLICY_DOCUMENT_PATH,
     DEFAULT_PROJECT_ID,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def build_source_document_link(
+    pages: Optional[List[int]] = None,
+    base_url: Optional[str] = None,
+    title: str = "Altostrat Singapore Employee Handbook",
+) -> Dict[str, Any]:
+    """Constructs a Google Cloud Storage direct deep-link to the policy document and page."""
+    url_base = base_url or DEFAULT_POLICY_DOCUMENT_BASE_URL
+    unique_pages = sorted(list(set(pages))) if pages else []
+
+    if unique_pages:
+        first_page = unique_pages[0]
+        url = f"{url_base}#page={first_page}"
+        if len(unique_pages) == 1:
+            label = f"{title} (Page {first_page})"
+        else:
+            pages_str = ", ".join(str(p) for p in unique_pages)
+            label = f"{title} (Pages {pages_str})"
+    else:
+        url = url_base
+        label = title
+
+    markdown_link = f"[{label}]({url})"
+    return {
+        "url": url,
+        "label": label,
+        "markdown_link": markdown_link,
+        "pages": unique_pages,
+        "gcs_uri": f"gs://{DEFAULT_POLICY_DOCUMENT_BUCKET}/{DEFAULT_POLICY_DOCUMENT_PATH}",
+    }
 
 
 def get_gcp_access_token() -> Optional[str]:
@@ -128,6 +162,7 @@ async def call_bigquery_conversational_api(
                 extracted_texts = []
                 citations = []
                 sql_queries = []
+                detected_pages = set()
 
                 items = data if isinstance(data, list) else data.get("messages", [data])
                 for item in items:
@@ -142,7 +177,7 @@ async def call_bigquery_conversational_api(
                         elif isinstance(text_obj, str):
                             extracted_texts.append(text_obj)
 
-                        # Extract SQL
+                        # Extract SQL and table rows
                         data_block = sys_msg.get("data", {})
                         if isinstance(data_block, dict):
                             if "generatedSql" in data_block:
@@ -150,15 +185,40 @@ async def call_bigquery_conversational_api(
                             if "result" in data_block and isinstance(data_block["result"], dict):
                                 rows = data_block["result"].get("data", [])
                                 for row in rows:
-                                    if isinstance(row, dict) and "clause_title" in row:
-                                        citations.append(f"Altostrat Singapore Handbook, {row['clause_title']}")
+                                    if isinstance(row, dict):
+                                        if "clause_title" in row:
+                                            citations.append(f"Altostrat Singapore Handbook, {row['clause_title']}")
+                                        elif "title" in row:
+                                            citations.append(f"Altostrat Singapore Handbook, {row['title']}")
+                                        
+                                        # Check for page indicators in row
+                                        for page_key in ("page", "page_number", "page_no", "page_num"):
+                                            if page_key in row and row[page_key] is not None:
+                                                try:
+                                                    detected_pages.add(int(row[page_key]))
+                                                except (ValueError, TypeError):
+                                                    pass
 
                 final_text = "\n\n".join(extracted_texts) if extracted_texts else str(data)
+
+                # Extract page numbers from text if not found in structured data
+                if final_text:
+                    page_matches = re.findall(r"(?:Page|page|p\.)\s*:?\s*(\d+)", final_text)
+                    for pm in page_matches:
+                        try:
+                            detected_pages.add(int(pm))
+                        except (ValueError, TypeError):
+                            pass
+
+                sorted_pages = sorted(list(detected_pages))
+                source_doc = build_source_document_link(pages=sorted_pages)
 
                 return {
                     "status": "SUCCESS",
                     "text": final_text,
                     "citations": citations,
+                    "pages": sorted_pages,
+                    "source_document": source_doc,
                     "sql_queries": sql_queries,
                     "raw_response": data,
                     "source": "BigQuery Conversational API",

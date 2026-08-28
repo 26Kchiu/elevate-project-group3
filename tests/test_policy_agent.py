@@ -20,6 +20,11 @@ class TestPolicyAgentBQCA(unittest.TestCase):
         self.assertIn("agent_98c36166-3d31-471e-8fce-4dc446069ad7", provenance.get("data_agent_id", ""))
         self.assertTrue(len(provenance.get("sql_queries", [])) > 0)
 
+        # Verify source Cloud Storage hyperlink and page anchor
+        self.assertIn("📄 **Source Document:**", res["text"])
+        self.assertIn("https://storage.cloud.google.com/hr-km-landing-nonprod-elevate-taiwan-cohort-2/incoming/handbook.pdf#page=1", res["text"])
+        self.assertEqual(provenance.get("pages"), [1])
+
 
 if __name__ == "__main__":
     unittest.main()

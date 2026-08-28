@@ -96,6 +96,13 @@ class PolicyAgent(BaseAgent):
             else:
                 resp_class = "direct"
 
+            # Attach hyperlinked source Cloud Storage document with page deep-linking
+            source_doc = bq_resp.get("source_document") or {}
+            source_link = source_doc.get("markdown_link")
+            if source_link and resp_class != "refuse":
+                if source_link not in resp_text:
+                    resp_text = f"{resp_text}\n\n📄 **Source Document:** {source_link}"
+
             return PolicyQueryResponse(
                 response_class=resp_class,
                 text=resp_text,
@@ -106,6 +113,8 @@ class PolicyAgent(BaseAgent):
                     "project_id": self.project_id,
                     "location": self.location,
                     "sql_queries": bq_resp.get("sql_queries", []),
+                    "source_document": source_doc,
+                    "pages": bq_resp.get("pages", []),
                 },
             )
 

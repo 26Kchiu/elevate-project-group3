@@ -14,6 +14,16 @@ DEFAULT_API_ENDPOINT = os.getenv(
     "BIGQUERY_CONVERSATIONAL_API_ENDPOINT",
     "https://geminidataanalytics.googleapis.com/v1alpha",
 )
+DEFAULT_POLICY_DOCUMENT_BUCKET = os.getenv(
+    "POLICY_DOCUMENT_GCS_BUCKET", "hr-km-landing-nonprod-elevate-taiwan-cohort-2"
+)
+DEFAULT_POLICY_DOCUMENT_PATH = os.getenv(
+    "POLICY_DOCUMENT_GCS_PATH", "incoming/handbook.pdf"
+)
+DEFAULT_POLICY_DOCUMENT_BASE_URL = os.getenv(
+    "POLICY_DOCUMENT_STORAGE_BASE_URL",
+    f"https://storage.cloud.google.com/{DEFAULT_POLICY_DOCUMENT_BUCKET}/{DEFAULT_POLICY_DOCUMENT_PATH}",
+)
 
 POLICY_AGENT_SYSTEM_PROMPT = """You are the Grounded HR Policy Reasoning Agent for Altostrat Singapore.
 Your primary role is to answer employee policy questions with 100% precision, deterministic grounding, and explicit citations to official policy clauses.
