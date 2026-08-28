@@ -298,10 +298,21 @@ async function handleSignOut() {
   window.location.href = "/login";
 }
 
+function toggleTokenVisibility() {
+  const input = document.getElementById("mcpTokenInput");
+  if (input) {
+    input.type = input.type === "password" ? "text" : "password";
+  }
+}
+
 async function syncAllServices() {
   try {
+    const tokenInput = document.getElementById("mcpTokenInput");
+    const mcpToken = tokenInput ? tokenInput.value : "";
+    const headers = mcpToken ? { "X-MCP-Token": mcpToken } : {};
+
     // 1. Fetch HCM Balances
-    const balRes = await fetch("/api/hcm/balances");
+    const balRes = await fetch("/api/hcm/balances", { headers });
     if (balRes.ok) {
       const balData = await balRes.json();
       const text = balData.balances_text || "";
@@ -320,7 +331,7 @@ async function syncAllServices() {
     }
 
     // 2. Fetch ITSM Tickets
-    const itsmRes = await fetch("/api/itsm/tickets");
+    const itsmRes = await fetch("/api/itsm/tickets", { headers });
     if (itsmRes.ok) {
       const itsmData = await itsmRes.json();
       let tickets = [];
@@ -381,15 +392,19 @@ async function handleFormSubmit(e) {
   const typingId = appendTypingIndicator();
 
   try {
+    const tokenInput = document.getElementById("mcpTokenInput");
+    const mcpToken = tokenInput ? tokenInput.value : "";
+    const headers = { "Content-Type": "application/json" };
+    if (mcpToken) headers["X-MCP-Token"] = mcpToken;
+
     const res = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: headers,
       body: JSON.stringify({
         message: text,
         agent_target: currentAgentMode,
-        model: currentModelChoice
+        model: currentModelChoice,
+        mcp_token: mcpToken
       })
     });
 

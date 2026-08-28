@@ -36,7 +36,8 @@ body {
   display: flex;
 }
 
-.app-container {
+.app-container,
+.app-layout {
   display: flex;
   width: 100vw;
   height: 100vh;
@@ -45,6 +46,7 @@ body {
 /* Sidebar */
 .sidebar {
   width: 400px;
+  min-width: 360px;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -62,7 +64,8 @@ body {
   border-bottom: 1px solid var(--border-color);
 }
 
-.brand-logo {
+.brand-logo,
+.logo-icon {
   width: 42px;
   height: 42px;
   background: linear-gradient(135deg, #3B82F6, #8B5CF6);
@@ -74,11 +77,26 @@ body {
   font-size: 1.15rem;
   color: #fff;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  flex-shrink: 0;
 }
 
-.brand-info h2 {
+.brand-info,
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-info h2,
+.brand-title {
   font-size: 1.05rem;
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.brand-sub {
+  font-size: 0.72rem;
+  color: #60A5FA;
+  font-weight: 500;
 }
 
 .badge {
@@ -106,6 +124,7 @@ body {
 }
 
 /* Agent Mode Selector */
+.agent-mode-selector,
 .agent-mode-selector-tri {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr 1fr;
@@ -114,6 +133,55 @@ body {
   padding: 4px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
+}
+
+.token-config-box {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.token-config-box label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.token-input-wrapper {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+.token-input-wrapper input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 4px 2px;
+}
+
+.btn-toggle-token {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.btn-toggle-token:hover {
+  opacity: 1;
 }
 
 .mode-btn {
