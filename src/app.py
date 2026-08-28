@@ -25,7 +25,7 @@ os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "vertex-auth-mod
 
 import google.auth
 from google import genai
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -44,7 +44,7 @@ from src.agents.workweek_hcm_agent.tools import (
 app = FastAPI(
     title="Elevate HR & ITSM Multi-Agent System",
     description="Unified Portal for WorkWeek HCM Agent & ServiceImmediately ITSM Agent",
-    version="2.0.0",
+    version="2.2.0",
 )
 
 app.add_middleware(
@@ -54,6 +54,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)

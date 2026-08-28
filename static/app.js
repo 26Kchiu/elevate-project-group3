@@ -15,20 +15,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function handleModelChange() {
   const selector = document.getElementById("modelSelector");
-  currentModelChoice = selector.value;
+  if (selector) {
+    currentModelChoice = selector.value;
+  }
   const chip = document.getElementById("modelChip");
-  if (currentModelChoice === "auto") {
-    chip.innerHTML = `<span class="icon">🤖</span> Auto Gemini`;
-  } else {
-    chip.innerHTML = `<span class="icon">⚡</span> ${currentModelChoice}`;
+  if (chip) {
+    if (currentModelChoice === "auto") {
+      chip.innerHTML = `<span class="icon">🤖</span> Auto Gemini`;
+    } else {
+      chip.innerHTML = `<span class="icon">⚡</span> ${escapeHtml(currentModelChoice)}`;
+    }
   }
 }
 
 function setAgentMode(mode) {
   currentAgentMode = mode;
-  document.getElementById("btnModeAuto").classList.toggle("active", mode === "auto");
-  document.getElementById("btnModeHcm").classList.toggle("active", mode === "workweek");
-  document.getElementById("btnModeItsm").classList.toggle("active", mode === "service_immediately");
+  const btnAuto = document.getElementById("btnModeAuto");
+  const btnHcm = document.getElementById("btnModeHcm");
+  const btnItsm = document.getElementById("btnModeItsm");
+
+  if (btnAuto) btnAuto.classList.toggle("active", mode === "auto");
+  if (btnHcm) btnHcm.classList.toggle("active", mode === "workweek");
+  if (btnItsm) btnItsm.classList.toggle("active", mode === "service_immediately");
 
   const subtitleLabels = {
     "auto": "Interactive Assistant &bull; Auto-Routing to WorkWeek HCM &amp; ServiceImmediately ITSM",
@@ -36,7 +44,10 @@ function setAgentMode(mode) {
     "service_immediately": "Dedicated Specialist &bull; ServiceImmediately ITSM Agent (/service-immediately/mcp/)"
   };
 
-  document.getElementById("activeAgentSubtitle").innerHTML = subtitleLabels[mode] || "";
+  const subtitle = document.getElementById("activeAgentSubtitle");
+  if (subtitle) {
+    subtitle.innerHTML = subtitleLabels[mode] || "";
+  }
 }
 
 /**
@@ -54,44 +65,43 @@ function initSpeechRecognition() {
     return;
   }
 
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  // Automatically adapt to user's system/browser language (supports zh-TW, zh-CN, en-US, etc.)
-  recognition.lang = navigator.language || "en-US";
+  try {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
 
-  recognition.onstart = () => {
-    isRecording = true;
-    updateVoiceUI(true);
-  };
+    recognition.onstart = () => {
+      isRecording = true;
+      updateVoiceUI(true);
+    };
 
-  recognition.onresult = (event) => {
-    let finalTranscript = "";
-    let interimTranscript = "";
-
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) {
-        finalTranscript += event.results[i][0].transcript;
-      } else {
-        interimTranscript += event.results[i][0].transcript;
+    recognition.onresult = (event) => {
+      let finalTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        }
       }
-    }
 
-    const input = document.getElementById("messageInput");
-    if (finalTranscript) {
-      input.value = (input.value ? input.value + " " : "") + finalTranscript;
-    }
-  };
+      const input = document.getElementById("messageInput");
+      if (input && finalTranscript) {
+        input.value = (input.value ? input.value + " " : "") + finalTranscript;
+      }
+    };
 
-  recognition.onerror = (event) => {
-    console.error("Speech recognition error:", event.error);
-    stopSpeechRecognition();
-  };
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      stopSpeechRecognition();
+    };
 
-  recognition.onend = () => {
-    isRecording = false;
-    updateVoiceUI(false);
-  };
+    recognition.onend = () => {
+      isRecording = false;
+      updateVoiceUI(false);
+    };
+  } catch (err) {
+    console.error("Error setting up speech recognition:", err);
+  }
 }
 
 function toggleSpeechRecognition() {
@@ -113,7 +123,9 @@ function toggleSpeechRecognition() {
 
 function stopSpeechRecognition() {
   if (recognition && isRecording) {
-    recognition.stop();
+    try {
+      recognition.stop();
+    } catch (e) {}
   }
   isRecording = false;
   updateVoiceUI(false);
@@ -125,13 +137,13 @@ function updateVoiceUI(recording) {
   const banner = document.getElementById("voiceBanner");
 
   if (recording) {
-    micBtn.classList.add("recording");
-    micIcon.innerText = "⏹️";
-    banner.style.display = "flex";
+    if (micBtn) micBtn.classList.add("recording");
+    if (micIcon) micIcon.innerText = "⏹️";
+    if (banner) banner.style.display = "flex";
   } else {
-    micBtn.classList.remove("recording");
-    micIcon.innerText = "🎙️";
-    banner.style.display = "none";
+    if (micBtn) micBtn.classList.remove("recording");
+    if (micIcon) micIcon.innerText = "🎙️";
+    if (banner) banner.style.display = "none";
   }
 }
 
@@ -145,14 +157,15 @@ async function syncAllServices() {
       const vacMatch = text.match(/Vacation:\s*([\d\.]+)\s*days remaining\s*\(([\d\.\/]+)\s*used\)/i);
       const sickMatch = text.match(/Sick:\s*([\d\.]+)\s*days remaining\s*\(([\d\.\/]+)\s*used\)/i);
 
-      if (vacMatch) {
-        document.getElementById("vacationRemaining").innerText = `${vacMatch[1]} days`;
-        document.getElementById("vacationUsed").innerText = `${vacMatch[2]} used`;
-      }
-      if (sickMatch) {
-        document.getElementById("sickRemaining").innerText = `${sickMatch[1]} days`;
-        document.getElementById("sickUsed").innerText = `${sickMatch[2]} used`;
-      }
+      const vacElem = document.getElementById("vacationRemaining");
+      const vacUsedElem = document.getElementById("vacationUsed");
+      const sickElem = document.getElementById("sickRemaining");
+      const sickUsedElem = document.getElementById("sickUsed");
+
+      if (vacMatch && vacElem) vacElem.innerText = `${vacMatch[1]} days`;
+      if (vacMatch && vacUsedElem) vacUsedElem.innerText = `${vacMatch[2]} used`;
+      if (sickMatch && sickElem) sickElem.innerText = `${sickMatch[1]} days`;
+      if (sickMatch && sickUsedElem) sickUsedElem.innerText = `${sickMatch[2]} used`;
     }
 
     // 2. Fetch ITSM Tickets
@@ -165,12 +178,17 @@ async function syncAllServices() {
       } catch (e) {
         tickets = [];
       }
-      document.getElementById("ticketsCount").innerText = `${tickets.length} Ticket(s)`;
-      if (tickets.length > 0) {
-        const t = tickets[0];
-        document.getElementById("latestTicketSnippet").innerText = `${t.ticket_id}: ${t.short_description}`;
-      } else {
-        document.getElementById("latestTicketSnippet").innerText = "No active incident tickets.";
+      const countElem = document.getElementById("ticketsCount");
+      const snippetElem = document.getElementById("latestTicketSnippet");
+
+      if (countElem) countElem.innerText = `${tickets.length} Ticket(s)`;
+      if (snippetElem) {
+        if (tickets.length > 0) {
+          const t = tickets[0];
+          snippetElem.innerText = `${t.ticket_id}: ${t.short_description}`;
+        } else {
+          snippetElem.innerText = "No active incident tickets.";
+        }
       }
     }
   } catch (err) {
@@ -179,7 +197,10 @@ async function syncAllServices() {
 }
 
 function sendQuickPrompt(text) {
-  document.getElementById("messageInput").value = text;
+  const input = document.getElementById("messageInput");
+  if (input) {
+    input.value = text;
+  }
   handleFormSubmit(new Event("submit"));
 }
 
@@ -191,10 +212,11 @@ function handleKeyDown(e) {
 }
 
 async function handleFormSubmit(e) {
-  if (e) e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   if (isRecording) stopSpeechRecognition();
 
   const input = document.getElementById("messageInput");
+  if (!input) return;
   const text = input.value.trim();
   if (!text) return;
 
@@ -202,7 +224,7 @@ async function handleFormSubmit(e) {
   input.value = "";
 
   const sendBtn = document.getElementById("sendBtn");
-  sendBtn.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
 
   const typingId = appendTypingIndicator();
 
@@ -236,12 +258,13 @@ async function handleFormSubmit(e) {
     removeMessage(typingId);
     appendAgentMessage("⚠️ Network error: " + err.message);
   } finally {
-    sendBtn.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 
 function appendUserMessage(text) {
   const stream = document.getElementById("chatStream");
+  if (!stream) return;
   const row = document.createElement("div");
   row.className = "message-row user";
   row.innerHTML = `<div class="user-bubble">${escapeHtml(text)}</div>`;
@@ -251,6 +274,7 @@ function appendUserMessage(text) {
 
 function appendTypingIndicator() {
   const stream = document.getElementById("chatStream");
+  if (!stream) return "typing-dummy";
   const row = document.createElement("div");
   const id = "typing-" + Date.now();
   row.id = id;
@@ -268,6 +292,7 @@ function removeMessage(id) {
 
 function appendAgentResponse(data) {
   const stream = document.getElementById("chatStream");
+  if (!stream) return;
   const row = document.createElement("div");
   row.className = "message-row agent";
 
@@ -305,6 +330,7 @@ function appendAgentResponse(data) {
 
 function appendAgentMessage(html) {
   const stream = document.getElementById("chatStream");
+  if (!stream) return;
   const row = document.createElement("div");
   row.className = "message-row agent";
   row.innerHTML = `<div class="agent-bubble">${html}</div>`;
@@ -314,13 +340,15 @@ function appendAgentMessage(html) {
 
 function clearChat() {
   const stream = document.getElementById("chatStream");
-  stream.innerHTML = `
-    <div class="message-row system">
-      <div class="system-bubble">
-        Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries. (支援多國語言與語音輸入)
+  if (stream) {
+    stream.innerHTML = `
+      <div class="message-row system">
+        <div class="system-bubble">
+          Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries. (支援多國語言與語音輸入)
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  }
 }
 
 function escapeHtml(str) {
