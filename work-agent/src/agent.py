@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "true"
-os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
+os.environ["GOOGLE_CLOUD_PROJECT"] = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
 os.environ["GOOGLE_CLOUD_LOCATION"] = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 import google.auth
@@ -27,7 +27,7 @@ def _smart_auth_default(*args, **kwargs):
     try:
         tok = subprocess.check_output(["gcloud", "auth", "print-access-token"], text=True).strip()
         if tok:
-            return Credentials(token=tok), os.getenv("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
+            return Credentials(token=tok), os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
     except Exception:
         pass
     return _orig_default(*args, **kwargs)

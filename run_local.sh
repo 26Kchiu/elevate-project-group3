@@ -4,7 +4,8 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="$DIR:$PYTHONPATH"
 export PORT="${PORT:-8080}"
-export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-elevate-taiwan-cohort-2}"
+export GOOGLE_CLOUD_PROJECT="elevate-taiwan-cohort-2"
+export GOOGLE_CLOUD_LOCATION="us-central1"
 export MODEL_NAME="${MODEL_NAME:-gemini-3.7-flash}"
 export GOOGLE_API_USE_CLIENT_CERTIFICATE=false
 export GOOGLE_API_USE_MTLS_ENDPOINT=never

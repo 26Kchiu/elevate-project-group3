@@ -29,7 +29,7 @@ CREATE OR REPLACE MODEL `hr_knowledge.docai_layout_parser`
 REMOTE WITH CONNECTION `us.docai_connection`
 OPTIONS (
   remote_service_type = 'DOCUMENT_AI',
-  document_ai_processor = 'projects/hr-agent-mvp-prod/locations/us/processors/layout-parser-default'
+  document_ai_processor = 'projects/elevate-taiwan-cohort-2/locations/us/processors/layout-parser-default'
 );
 
 -- Remote Text Embedding Model Reference

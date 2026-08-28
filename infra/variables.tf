@@ -1,7 +1,7 @@
 variable "project_id" {
   type        = string
   description = "Google Cloud Project ID"
-  default     = "hr-agent-mvp-prod"
+  default     = "elevate-taiwan-cohort-2"
 }
 
 variable "region" {

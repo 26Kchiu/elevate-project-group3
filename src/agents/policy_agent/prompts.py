@@ -2,7 +2,7 @@
 
 import os
 
-DEFAULT_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
+DEFAULT_PROJECT_ID = "elevate-taiwan-cohort-2"
 DEFAULT_LOCATION = os.getenv(
     "BIGQUERY_DATA_AGENT_LOCATION",
     os.getenv("DEFAULT_LOCATION", "US"),

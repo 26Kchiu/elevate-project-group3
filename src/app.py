@@ -15,7 +15,10 @@ if str(REPO_ROOT) not in sys.path:
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 
-DEFAULT_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
+DEFAULT_PROJECT_ID = "elevate-taiwan-cohort-2"
+if os.getenv("GOOGLE_CLOUD_PROJECT") not in ("elevate-taiwan-cohort-2",):
+    os.environ["GOOGLE_CLOUD_PROJECT"] = DEFAULT_PROJECT_ID
+
 DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "auto")
 DEFAULT_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 DEFAULT_MCP_TOKEN = os.getenv("DEFAULT_MCP_TOKEN", "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg")
