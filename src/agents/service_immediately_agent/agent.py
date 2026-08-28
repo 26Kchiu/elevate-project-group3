@@ -57,7 +57,10 @@ class ServiceImmediatelyAgent:
         location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
         try:
-            token = subprocess.check_output(["gcloud", "auth", "print-access-token"]).decode().strip()
+            token = subprocess.check_output(
+                ["gcloud", "auth", "print-access-token"],
+                timeout=2.0
+            ).decode().strip()
             creds = credentials.Credentials(token)
             return genai.Client(vertexai=True, project=project_id, location=location, credentials=creds)
         except Exception:

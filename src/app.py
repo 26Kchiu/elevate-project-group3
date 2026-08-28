@@ -6,16 +6,20 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+# Ensure repo root is on sys.path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# Ensure non-blocking GenAI client setup
+if "GEMINI_API_KEY" not in os.environ:
+    os.environ["GEMINI_API_KEY"] = "default-vertex-mode"
+
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-
-# Ensure repo root is on sys.path
-REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 # Import both specialist agents (without modifying workweek_hcm_agent codebase)
 from src.agents.workweek_hcm_agent import WorkWeekHCMAgent
