@@ -15,7 +15,7 @@ import json
 import os
 import re
 from typing import Any, Dict, List
-from ..config.settings import settings
+from ..shared.config import settings
 from .curation_gate import curation_gate
 
 

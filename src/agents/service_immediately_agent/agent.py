@@ -1,4 +1,4 @@
-"""ServiceImmediately Agent implementation."""
+"""ServiceImmediately Agent implementation with Auto-Model Selection."""
 
 import asyncio
 import json
@@ -8,6 +8,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import google.auth
 import httpx
 from google import genai
 from google.genai import types
@@ -27,7 +28,16 @@ from .tools import (
     enforce_subject_isolation,
 )
 
-DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.7-flash")
+CANDIDATE_MODELS = [
+    "gemini-3.7-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+]
+
+DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "auto")
+DEFAULT_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
+DEFAULT_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 
 class ServiceImmediatelyAgent:
@@ -49,22 +59,25 @@ class ServiceImmediatelyAgent:
         self.genai_client = self._init_genai_client()
 
     def _init_genai_client(self) -> genai.Client:
-        """Initialize Google GenAI client supporting API Key, Vertex AI, or gcloud OAuth token."""
-        if "GEMINI_API_KEY" in os.environ:
-            return genai.Client()
+        """Initialize Google GenAI client supporting API Key or Vertex AI with ADC credentials."""
+        user_api_key = os.environ.get("GEMINI_API_KEY")
+        if user_api_key and not user_api_key.startswith("vertex-"):
+            return genai.Client(api_key=user_api_key)
 
-        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
-        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", DEFAULT_PROJECT_ID)
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", DEFAULT_LOCATION)
 
         try:
-            token = subprocess.check_output(
-                ["gcloud", "auth", "print-access-token"],
-                timeout=2.0
-            ).decode().strip()
-            creds = credentials.Credentials(token)
+            creds, _ = google.auth.default()
             return genai.Client(vertexai=True, project=project_id, location=location, credentials=creds)
         except Exception:
             return genai.Client(vertexai=True, project=project_id, location=location)
+
+    def _resolve_model_list(self) -> List[str]:
+        """Resolve list of models to try (auto mode tests best available models in order)."""
+        if self.model_name == "auto":
+            return CANDIDATE_MODELS
+        return [self.model_name] + [m for m in CANDIDATE_MODELS if m != self.model_name]
 
     async def run(
         self,
@@ -72,7 +85,7 @@ class ServiceImmediatelyAgent:
         employee_id: Optional[str] = None,
         mcp_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Run the ServiceImmediately agent with dynamic MCP tool discovery and execution loop."""
+        """Run the ServiceImmediately agent with auto-model fallback and MCP tool execution loop."""
         active_emp_id = employee_id or self.employee_id
         active_token = mcp_token or self.mcp_token
         system_instruction = get_system_instruction(active_emp_id)
@@ -82,15 +95,11 @@ class ServiceImmediatelyAgent:
             "Content-Type": "application/json",
         }
 
-        print(f"\n{'=' * 55}")
-        print(f"[*] Starting {self.name} (Model: {self.model_name})")
-        print(f"[*] MCP Endpoint: {self.mcp_url}")
-        print(f"[*] Authenticated Employee ID: {active_emp_id}")
-        print(f"[*] User Prompt: {user_prompt}")
-        print(f"{'=' * 55}\n")
-
         tool_calls_record: List[Dict[str, Any]] = []
         tool_responses_record: List[Dict[str, Any]] = []
+
+        models_to_try = self._resolve_model_list()
+        last_error = None
 
         async with httpx.AsyncClient(headers=headers, timeout=25.0) as http_client:
             async with streamable_http_client(self.mcp_url, http_client=http_client) as streams:
@@ -117,61 +126,79 @@ class ServiceImmediatelyAgent:
 
                     gemini_tools = [types.Tool(function_declarations=func_declarations)]
 
-                    # 3. Create Gemini chat session
-                    chat = self.genai_client.chats.create(
-                        model=self.model_name,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            tools=gemini_tools,
-                            temperature=0.1,
-                        ),
-                    )
+                    # 3. Iterate through candidate models (Auto Model Selection)
+                    for candidate_model in models_to_try:
+                        print(f"\n{'=' * 55}")
+                        print(f"[*] Starting {self.name} (Attempting Model: {candidate_model})")
+                        print(f"[*] MCP Endpoint: {self.mcp_url}")
+                        print(f"[*] Authenticated Employee ID: {active_emp_id}")
+                        print(f"[*] User Prompt: {user_prompt}")
+                        print(f"{'=' * 55}\n")
 
-                    # 4. Process user request & execute function calling loop
-                    response = chat.send_message(user_prompt)
-
-                    while response.function_calls:
-                        for call in response.function_calls:
-                            tool_name = call.name
-                            tool_args = dict(call.args) if call.args else {}
-                            print(f"[Agent -> Tool Call] Invoking ServiceImmediately MCP `{tool_name}`: {json.dumps(tool_args, ensure_ascii=False)}")
-                            tool_calls_record.append({"name": tool_name, "args": tool_args})
-
-                            # Strict Access Control: Enforce Subject Isolation Guardrail
-                            target_id = tool_args.get("employee_id") or tool_args.get("requested_by")
-                            if target_id and enforce_subject_isolation(target_id, active_emp_id):
-                                result_text = ACCESS_DENIED_MESSAGE
-                                print(f"[Access Control Guardrail] Blocked unauthorized cross-user tool call for target `{target_id}` (authenticated: `{active_emp_id}`)")
-                            else:
-                                # Execute remote tool on ServiceImmediately MCP Server
-                                tool_result = await session.call_tool(name=tool_name, arguments=tool_args)
-                                result_text = "\n".join([c.text for c in tool_result.content if hasattr(c, "text")])
-
-                            print(f"[MCP -> Agent Result] Response payload: {result_text}\n")
-                            tool_responses_record.append({"name": tool_name, "response": result_text})
-
-                            # Send tool execution result back to Gemini
-                            response = chat.send_message(
-                                types.Part.from_function_response(
-                                    name=tool_name,
-                                    response={"result": result_text},
-                                )
+                        try:
+                            # Create Gemini chat session
+                            chat = self.genai_client.chats.create(
+                                model=candidate_model,
+                                config=types.GenerateContentConfig(
+                                    system_instruction=system_instruction,
+                                    tools=gemini_tools,
+                                    temperature=0.1,
+                                ),
                             )
 
-                    reply_text = response.text or ""
-                    print("-" * 55)
-                    print(f"[Agent Response]:\n{reply_text}")
-                    print("-" * 55 + "\n")
+                            # Process user request & execute function calling loop
+                            response = chat.send_message(user_prompt)
 
-                    return {
-                        "agent_name": self.name,
-                        "model": self.model_name,
-                        "reply": reply_text,
-                        "employee_id": active_emp_id,
-                        "tool_calls": tool_calls_record,
-                        "tool_responses": tool_responses_record,
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    }
+                            while response.function_calls:
+                                for call in response.function_calls:
+                                    tool_name = call.name
+                                    tool_args = dict(call.args) if call.args else {}
+                                    print(f"[Agent -> Tool Call] Invoking ServiceImmediately MCP `{tool_name}`: {json.dumps(tool_args, ensure_ascii=False)}")
+                                    tool_calls_record.append({"name": tool_name, "args": tool_args})
+
+                                    # Strict Access Control: Enforce Subject Isolation Guardrail
+                                    target_id = tool_args.get("employee_id") or tool_args.get("requested_by")
+                                    if target_id and enforce_subject_isolation(target_id, active_emp_id):
+                                        result_text = ACCESS_DENIED_MESSAGE
+                                        print(f"[Access Control Guardrail] Blocked unauthorized cross-user tool call for target `{target_id}` (authenticated: `{active_emp_id}`)")
+                                    else:
+                                        # Execute remote tool on ServiceImmediately MCP Server
+                                        tool_result = await session.call_tool(name=tool_name, arguments=tool_args)
+                                        result_text = "\n".join([c.text for c in tool_result.content if hasattr(c, "text")])
+
+                                    print(f"[MCP -> Agent Result] Response payload: {result_text}\n")
+                                    tool_responses_record.append({"name": tool_name, "response": result_text})
+
+                                    # Send tool execution result back to Gemini
+                                    response = chat.send_message(
+                                        types.Part.from_function_response(
+                                            name=tool_name,
+                                            response={"result": result_text},
+                                        )
+                                    )
+
+                            reply_text = response.text or ""
+                            print("-" * 55)
+                            print(f"[Agent Response ({candidate_model})]:\n{reply_text}")
+                            print("-" * 55 + "\n")
+
+                            return {
+                                "agent_name": self.name,
+                                "model": candidate_model,
+                                "reply": reply_text,
+                                "employee_id": active_emp_id,
+                                "tool_calls": tool_calls_record,
+                                "tool_responses": tool_responses_record,
+                                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            }
+
+                        except Exception as err:
+                            last_error = err
+                            print(f"[Auto-Model] Model `{candidate_model}` encountered: {err}. Attempting next model...")
+                            continue
+
+                    if last_error:
+                        raise last_error
 
     async def execute_task(self, task: str, parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Unified interface for Root Orchestrator."""
@@ -182,20 +209,9 @@ class ServiceImmediatelyAgent:
         result_payload = await self.run(user_prompt=task, employee_id=emp_id, mcp_token=mcp_tok)
         return {
             "agent_name": self.name,
-            "model": self.model_name,
+            "model": result_payload.get("model", self.model_name),
             "result": result_payload["reply"],
             "tool_calls": result_payload["tool_calls"],
             "tool_responses": result_payload["tool_responses"],
             "status": "success",
         }
-
-
-async def main():
-    agent = ServiceImmediatelyAgent()
-    # Test Scenario: Query employee's open incident tickets
-    result = await agent.run("Please check all IT incident tickets submitted under my name.")
-    print(f"\nFinal Result from {agent.model_name}:\n{result['reply']}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

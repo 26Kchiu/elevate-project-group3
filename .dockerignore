@@ -1,6 +1,13 @@
-.venv
 .git
+.gitignore
+.venv
 __pycache__
 *.pyc
-.env
+*.pyo
+*.pyd
 .DS_Store
+.env
+tests/
+eval/
+infra/
+scratch/

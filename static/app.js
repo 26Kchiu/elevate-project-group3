@@ -1,38 +1,205 @@
 /**
- * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
- * Incorporates SSO authentication with IdP (login.corp.google.com) and dynamic MCP token minting.
+ * Frontend logic for Elevate Tri-Agent Portal (Policy, WorkWeek HCM & ServiceImmediately ITSM).
+ * Features: Auto-Model Selection, Tri-Agent Routing, Live Speech-to-Text, and Corp SSO Auth Guard.
  */
 
-let currentAgentMode = "auto"; // "auto", "workweek", "service_immediately"
+let currentAgentMode = "auto"; // "auto", "policy", "workweek", "service_immediately"
+let currentModelChoice = "auto";
+let recognition = null;
+let isRecording = false;
+let basePromptText = "";
+
+const VOICE_LANGS = [
+  { code: "zh-TW", label: "🇹🇼 中文" },
+  { code: "en-US", label: "🇺🇸 EN" },
+  { code: "zh-CN", label: "🇨🇳 简中" },
+  { code: "ja-JP", label: "🇯🇵 日語" }
+];
+let currentVoiceLangIndex = 0;
 
 document.addEventListener("DOMContentLoaded", async () => {
   await initSSOAndSession();
+  initSpeechRecognition();
 });
 
-function toggleTokenVisibility() {
-  const tokenInput = document.getElementById("mcpTokenInput");
-  tokenInput.type = tokenInput.type === "password" ? "text" : "password";
+function cycleVoiceLanguage() {
+  currentVoiceLangIndex = (currentVoiceLangIndex + 1) % VOICE_LANGS.length;
+  const currentLang = VOICE_LANGS[currentVoiceLangIndex];
+  const pill = document.getElementById("voiceLangPill");
+  if (pill) {
+    pill.innerText = currentLang.label;
+  }
+  if (recognition) {
+    recognition.lang = currentLang.code;
+  }
+  const statusText = document.getElementById("voiceStatusText");
+  if (statusText && isRecording) {
+    statusText.innerText = `Listening in ${currentLang.label}... Please speak into your microphone`;
+  }
+}
+
+function handleModelChange() {
+  const selector = document.getElementById("modelSelector");
+  if (selector) {
+    currentModelChoice = selector.value;
+  }
+  const chip = document.getElementById("modelChip");
+  if (chip) {
+    if (currentModelChoice === "auto") {
+      chip.innerHTML = `<span class="icon">🤖</span> Auto Gemini`;
+    } else {
+      chip.innerHTML = `<span class="icon">⚡</span> ${escapeHtml(currentModelChoice)}`;
+    }
+  }
 }
 
 function setAgentMode(mode) {
   currentAgentMode = mode;
-  document.getElementById("btnModeAuto").classList.toggle("active", mode === "auto");
-  document.getElementById("btnModeHcm").classList.toggle("active", mode === "workweek");
-  document.getElementById("btnModeItsm").classList.toggle("active", mode === "service_immediately");
+  const btnAuto = document.getElementById("btnModeAuto");
+  const btnPolicy = document.getElementById("btnModePolicy");
+  const btnHcm = document.getElementById("btnModeHcm");
+  const btnItsm = document.getElementById("btnModeItsm");
 
-  const modeLabels = {
-    "auto": "🤖 Auto-Route Mode",
-    "workweek": "💼 WorkWeek HCM Mode",
-    "service_immediately": "🎫 ServiceImmediately Mode"
-  };
+  if (btnAuto) btnAuto.classList.toggle("active", mode === "auto");
+  if (btnPolicy) btnPolicy.classList.toggle("active", mode === "policy");
+  if (btnHcm) btnHcm.classList.toggle("active", mode === "workweek");
+  if (btnItsm) btnItsm.classList.toggle("active", mode === "service_immediately");
+
   const subtitleLabels = {
-    "auto": "Interactive Assistant &bull; Auto-Routing to WorkWeek HCM &amp; ServiceImmediately ITSM",
+    "auto": "Interactive Assistant &bull; Auto-Routing across Policy Agent, WorkWeek HCM &amp; ServiceImmediately ITSM",
+    "policy": "Dedicated Specialist &bull; Grounded HR Policy Agent (BigQuery Conversational Analytics)",
     "workweek": "Dedicated Specialist &bull; WorkWeek HCM Agent (/work-week/mcp/)",
     "service_immediately": "Dedicated Specialist &bull; ServiceImmediately ITSM Agent (/service-immediately/mcp/)"
   };
 
-  document.getElementById("activeModeChip").innerHTML = `<span class="icon">${mode === "auto" ? "🤖" : (mode === "workweek" ? "💼" : "🎫")}</span> ${modeLabels[mode] || mode}`;
-  document.getElementById("activeAgentSubtitle").innerHTML = subtitleLabels[mode] || "";
+  const subtitle = document.getElementById("activeAgentSubtitle");
+  if (subtitle) {
+    subtitle.innerHTML = subtitleLabels[mode] || "";
+  }
+}
+
+/**
+ * Initialize Speech-To-Text (Web Speech API)
+ */
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.warn("Speech Recognition API is not supported in this browser.");
+    const micBtn = document.getElementById("micBtn");
+    if (micBtn) {
+      micBtn.title = "Speech-to-Text not supported in this browser (Use Google Chrome or Edge)";
+      micBtn.style.opacity = "0.5";
+    }
+    return;
+  }
+
+  try {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = VOICE_LANGS[currentVoiceLangIndex].code;
+
+    recognition.onstart = () => {
+      isRecording = true;
+      const input = document.getElementById("messageInput");
+      basePromptText = input ? input.value.trim() : "";
+      updateVoiceUI(true);
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        basePromptText = (basePromptText ? basePromptText + " " : "") + finalTranscript.trim();
+      }
+
+      const input = document.getElementById("messageInput");
+      if (input) {
+        const displayText = basePromptText + (interimTranscript ? (basePromptText ? " " : "") + interimTranscript : "");
+        input.value = displayText;
+        input.scrollTop = input.scrollHeight;
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.warn("Speech recognition event:", event.error);
+      const statusText = document.getElementById("voiceStatusText");
+      if (event.error === "no-speech") {
+        if (statusText) statusText.innerText = "No voice heard yet. Please speak clearly into your microphone...";
+      } else if (event.error === "not-allowed") {
+        alert("Microphone permission was denied. Please allow microphone access in your browser address bar.");
+        stopSpeechRecognition();
+      } else {
+        stopSpeechRecognition();
+      }
+    };
+
+    recognition.onend = () => {
+      isRecording = false;
+      updateVoiceUI(false);
+    };
+  } catch (err) {
+    console.error("Error setting up speech recognition:", err);
+  }
+}
+
+function toggleSpeechRecognition() {
+  if (!recognition) {
+    alert("Speech recognition is not supported in your browser. Please use Google Chrome or Microsoft Edge.");
+    return;
+  }
+  if (isRecording) {
+    stopSpeechRecognition();
+  } else {
+    try {
+      recognition.lang = VOICE_LANGS[currentVoiceLangIndex].code;
+      recognition.start();
+    } catch (err) {
+      console.error("Error starting speech recognition:", err);
+    }
+  }
+}
+
+function stopSpeechRecognition() {
+  if (recognition && isRecording) {
+    try {
+      recognition.stop();
+    } catch (e) {}
+  }
+  isRecording = false;
+  updateVoiceUI(false);
+}
+
+function updateVoiceUI(recording) {
+  const micBtn = document.getElementById("micBtn");
+  const micIcon = document.getElementById("micIcon");
+  const banner = document.getElementById("voiceBanner");
+  const statusText = document.getElementById("voiceStatusText");
+  const currentLang = VOICE_LANGS[currentVoiceLangIndex];
+
+  if (recording) {
+    if (micBtn) micBtn.classList.add("recording");
+    if (micIcon) micIcon.innerText = "⏹️";
+    if (statusText) {
+      statusText.innerText = `Listening in ${currentLang.label}... Speak your question (點擊 ⏹️ 完成)`;
+    }
+    if (banner) banner.style.display = "flex";
+  } else {
+    if (micBtn) micBtn.classList.remove("recording");
+    if (micIcon) micIcon.innerText = "🎙️";
+    if (banner) banner.style.display = "none";
+  }
 }
 
 /**
@@ -132,33 +299,28 @@ async function handleSignOut() {
 }
 
 async function syncAllServices() {
-  const token = document.getElementById("mcpTokenInput").value.trim();
-
   try {
     // 1. Fetch HCM Balances
-    const balRes = await fetch("/api/hcm/balances", {
-      headers: { "X-MCP-Token": token }
-    });
+    const balRes = await fetch("/api/hcm/balances");
     if (balRes.ok) {
       const balData = await balRes.json();
       const text = balData.balances_text || "";
       const vacMatch = text.match(/Vacation:\s*([\d\.]+)\s*days remaining\s*\(([\d\.\/]+)\s*used\)/i);
       const sickMatch = text.match(/Sick:\s*([\d\.]+)\s*days remaining\s*\(([\d\.\/]+)\s*used\)/i);
 
-      if (vacMatch) {
-        document.getElementById("vacationRemaining").innerText = `${vacMatch[1]} days`;
-        document.getElementById("vacationUsed").innerText = `${vacMatch[2]} used`;
-      }
-      if (sickMatch) {
-        document.getElementById("sickRemaining").innerText = `${sickMatch[1]} days`;
-        document.getElementById("sickUsed").innerText = `${sickMatch[2]} used`;
-      }
+      const vacElem = document.getElementById("vacationRemaining");
+      const vacUsedElem = document.getElementById("vacationUsed");
+      const sickElem = document.getElementById("sickRemaining");
+      const sickUsedElem = document.getElementById("sickUsed");
+
+      if (vacMatch && vacElem) vacElem.innerText = `${vacMatch[1]} days`;
+      if (vacMatch && vacUsedElem) vacUsedElem.innerText = `${vacMatch[2]} used`;
+      if (sickMatch && sickElem) sickElem.innerText = `${sickMatch[1]} days`;
+      if (sickMatch && sickUsedElem) sickUsedElem.innerText = `${sickMatch[2]} used`;
     }
 
     // 2. Fetch ITSM Tickets
-    const itsmRes = await fetch("/api/itsm/tickets", {
-      headers: { "X-MCP-Token": token }
-    });
+    const itsmRes = await fetch("/api/itsm/tickets");
     if (itsmRes.ok) {
       const itsmData = await itsmRes.json();
       let tickets = [];
@@ -167,12 +329,17 @@ async function syncAllServices() {
       } catch (e) {
         tickets = [];
       }
-      document.getElementById("ticketsCount").innerText = `${tickets.length} Ticket(s)`;
-      if (tickets.length > 0) {
-        const t = tickets[0];
-        document.getElementById("latestTicketSnippet").innerText = `${t.ticket_id}: ${t.short_description}`;
-      } else {
-        document.getElementById("latestTicketSnippet").innerText = "No active incident tickets.";
+      const countElem = document.getElementById("ticketsCount");
+      const snippetElem = document.getElementById("latestTicketSnippet");
+
+      if (countElem) countElem.innerText = `${tickets.length} Ticket(s)`;
+      if (snippetElem) {
+        if (tickets.length > 0) {
+          const t = tickets[0];
+          snippetElem.innerText = `${t.ticket_id}: ${t.short_description}`;
+        } else {
+          snippetElem.innerText = "No active incident tickets.";
+        }
       }
     }
   } catch (err) {
@@ -181,7 +348,10 @@ async function syncAllServices() {
 }
 
 function sendQuickPrompt(text) {
-  document.getElementById("messageInput").value = text;
+  const input = document.getElementById("messageInput");
+  if (input) {
+    input.value = text;
+  }
   handleFormSubmit(new Event("submit"));
 }
 
@@ -193,31 +363,33 @@ function handleKeyDown(e) {
 }
 
 async function handleFormSubmit(e) {
-  if (e) e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
+  if (isRecording) stopSpeechRecognition();
+
   const input = document.getElementById("messageInput");
+  if (!input) return;
   const text = input.value.trim();
   if (!text) return;
 
   appendUserMessage(text);
   input.value = "";
+  basePromptText = "";
 
   const sendBtn = document.getElementById("sendBtn");
-  sendBtn.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
 
   const typingId = appendTypingIndicator();
-  const token = document.getElementById("mcpTokenInput").value.trim();
 
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "X-MCP-Token": token
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         message: text,
         agent_target: currentAgentMode,
-        mcp_token: token
+        model: currentModelChoice
       })
     });
 
@@ -232,18 +404,19 @@ async function handleFormSubmit(e) {
     const data = await res.json();
     appendAgentResponse(data);
 
-    // Refresh counters after action
+    // Refresh dashboard counters
     syncAllServices();
   } catch (err) {
     removeMessage(typingId);
     appendAgentMessage("⚠️ Network error: " + err.message);
   } finally {
-    sendBtn.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 
 function appendUserMessage(text) {
   const stream = document.getElementById("chatStream");
+  if (!stream) return;
   const row = document.createElement("div");
   row.className = "message-row user";
   row.innerHTML = `<div class="user-bubble">${escapeHtml(text)}</div>`;
@@ -253,11 +426,12 @@ function appendUserMessage(text) {
 
 function appendTypingIndicator() {
   const stream = document.getElementById("chatStream");
+  if (!stream) return "typing-dummy";
   const row = document.createElement("div");
   const id = "typing-" + Date.now();
   row.id = id;
   row.className = "message-row agent";
-  row.innerHTML = `<div class="agent-bubble"><em>⚡ Multi-Agent Hub is dispatching to specialist MCP server...</em></div>`;
+  row.innerHTML = `<div class="agent-bubble"><em>⚡ Tri-Agent Hub is analyzing intent and coordinating specialist agents...</em></div>`;
   stream.appendChild(row);
   stream.scrollTop = stream.scrollHeight;
   return id;
@@ -270,23 +444,43 @@ function removeMessage(id) {
 
 function appendAgentResponse(data) {
   const stream = document.getElementById("chatStream");
+  if (!stream) return;
   const row = document.createElement("div");
   row.className = "message-row agent";
 
   const agentName = data.agent_name || "Specialist Agent";
-  const isItsm = agentName.toLowerCase().includes("serviceimmediately") || agentName.toLowerCase().includes("itsm");
-  const tagClass = isItsm ? "agent-tag itsm" : "agent-tag";
-  const tagIcon = isItsm ? "🎫" : "💼";
+  const nameLower = agentName.toLowerCase();
 
-  let formattedReply = formatMarkdown(data.reply || data.result || "");
+  let tagClass = "agent-tag";
+  let tagIcon = "💼";
+
+  if (nameLower.includes("policy")) {
+    tagClass = "agent-tag policy";
+    tagIcon = "📜";
+  } else if (nameLower.includes("serviceimmediately") || nameLower.includes("itsm")) {
+    tagClass = "agent-tag itsm";
+    tagIcon = "🎫";
+  }
+
+  let formattedReply = formatMarkdown(data.reply || data.result || data.text || "");
   let html = `
     <div class="agent-bubble">
       <div class="${tagClass}">
-        <span>${tagIcon}</span> ${escapeHtml(agentName)} &bull; ${escapeHtml(data.model || "Gemini 3.7 Flash")}
+        <span>${tagIcon}</span> ${escapeHtml(agentName)} &bull; ${escapeHtml(data.model || "Gemini / BigQuery")}
       </div>
       <div>${formattedReply}</div>
   `;
 
+  // Citations Badge if Policy Agent
+  if (data.citations && data.citations.length > 0) {
+    html += `
+      <div class="tool-call-badge" style="background-color: rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.4); color: #DDD6FE;">
+        <span>📚 <strong>Handbook Citations:</strong> ${escapeHtml(data.citations.join(" | "))}</span>
+      </div>
+    `;
+  }
+
+  // MCP Tool Execution Badges
   if (data.tool_calls && data.tool_calls.length > 0) {
     for (const tc of data.tool_calls) {
       const argsStr = JSON.stringify(tc.args || {});
@@ -307,6 +501,7 @@ function appendAgentResponse(data) {
 
 function appendAgentMessage(html) {
   const stream = document.getElementById("chatStream");
+  if (!stream) return;
   const row = document.createElement("div");
   row.className = "message-row agent";
   row.innerHTML = `<div class="agent-bubble">${html}</div>`;
@@ -316,13 +511,15 @@ function appendAgentMessage(html) {
 
 function clearChat() {
   const stream = document.getElementById("chatStream");
-  stream.innerHTML = `
-    <div class="message-row system">
-      <div class="system-bubble">
-        Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries.
+  if (stream) {
+    stream.innerHTML = `
+      <div class="message-row system">
+        <div class="system-bubble">
+          Chat cleared. Ready for Policy, WorkWeek HCM, or ServiceImmediately inquiries. (支援自動分流、多國語言與語音輸入)
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  }
 }
 
 function escapeHtml(str) {
@@ -332,7 +529,24 @@ function escapeHtml(str) {
 
 function formatMarkdown(text) {
   if (!text) return "";
-  let out = escapeHtml(text);
+
+  // Convert markdown links [Label](url) safely before escaping
+  const linkMatches = [];
+  let tokenized = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, (match, label, url) => {
+    const placeholder = `__LINK_PLACEHOLDER_${linkMatches.length}__`;
+    linkMatches.push({ label, url });
+    return placeholder;
+  });
+
+  let out = escapeHtml(tokenized);
+
+  // Restore hyperlinks safely
+  linkMatches.forEach((item, idx) => {
+    const placeholder = `__LINK_PLACEHOLDER_${idx}__`;
+    const safeLabel = escapeHtml(item.label);
+    const safeUrl = item.url.replace(/"/g, '&quot;');
+    out = out.replace(placeholder, `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">📄 ${safeLabel}</a>`);
+  });
 
   // Markdown tables
   if (out.includes('|')) {
