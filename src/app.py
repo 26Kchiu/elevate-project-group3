@@ -15,6 +15,10 @@ if str(REPO_ROOT) not in sys.path:
 os.environ["GOOGLE_API_USE_CLIENT_CERTIFICATE"] = "false"
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 
+DEFAULT_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
+DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+DEFAULT_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
 # Avoid blocking gcloud call during WorkWeekHCMAgent._init_genai_client
 os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "vertex-auth-mode")
 
@@ -67,8 +71,8 @@ def extract_nested_exception(e: BaseException) -> str:
 
 def get_shared_genai_client() -> genai.Client:
     """Create a non-blocking GenAI client using ADC credentials directly."""
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", DEFAULT_PROJECT_ID)
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", DEFAULT_LOCATION)
 
     # If user provided a real Gemini API Key, use API key mode
     user_api_key = os.environ.get("GEMINI_API_KEY")
@@ -85,7 +89,8 @@ def get_shared_genai_client() -> genai.Client:
 def get_hcm_agent() -> WorkWeekHCMAgent:
     global _hcm_agent
     if _hcm_agent is None:
-        _hcm_agent = WorkWeekHCMAgent()
+        model_name = os.environ.get("MODEL_NAME", DEFAULT_MODEL_NAME)
+        _hcm_agent = WorkWeekHCMAgent(model_name=model_name)
         _hcm_agent.genai_client = get_shared_genai_client()
     return _hcm_agent
 
@@ -93,7 +98,8 @@ def get_hcm_agent() -> WorkWeekHCMAgent:
 def get_itsm_agent() -> ServiceImmediatelyAgent:
     global _itsm_agent
     if _itsm_agent is None:
-        _itsm_agent = ServiceImmediatelyAgent()
+        model_name = os.environ.get("MODEL_NAME", DEFAULT_MODEL_NAME)
+        _itsm_agent = ServiceImmediatelyAgent(model_name=model_name)
         _itsm_agent.genai_client = get_shared_genai_client()
     return _itsm_agent
 
@@ -132,20 +138,25 @@ async def serve_index():
 async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
     """Check connectivity and session info for both WorkWeek and ServiceImmediately MCP servers."""
     token = x_mcp_token or "mcp__odawPH3AEWphSkF7ZK-i2vQMUfhI7FtcXBvQAF80Jg"
+    model = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", DEFAULT_PROJECT_ID)
     return {
         "status": "HEALTHY",
         "authenticated_employee_id": "EMP-545",
+        "project_id": project,
         "agents": {
             "workweek_hcm": {
                 "name": "WorkWeek HCM Agent",
                 "mcp_url": "https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/",
-                "model": os.getenv("MODEL_NAME", "gemini-3.7-flash"),
+                "model": model,
+                "project": project,
                 "status": "ONLINE",
             },
             "service_immediately": {
                 "name": "ServiceImmediately Agent",
                 "mcp_url": "https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/",
-                "model": os.getenv("MODEL_NAME", "gemini-3.7-flash"),
+                "model": model,
+                "project": project,
                 "status": "ONLINE",
             },
         },

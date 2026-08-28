@@ -8,6 +8,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import google.auth
 import httpx
 from google import genai
 from google.genai import types
@@ -27,7 +28,9 @@ from .tools import (
     enforce_subject_isolation,
 )
 
-DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.7-flash")
+DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+DEFAULT_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
+DEFAULT_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 
 class ServiceImmediatelyAgent:
@@ -49,19 +52,16 @@ class ServiceImmediatelyAgent:
         self.genai_client = self._init_genai_client()
 
     def _init_genai_client(self) -> genai.Client:
-        """Initialize Google GenAI client supporting API Key, Vertex AI, or gcloud OAuth token."""
-        if "GEMINI_API_KEY" in os.environ:
-            return genai.Client()
+        """Initialize Google GenAI client supporting API Key or Vertex AI with ADC credentials."""
+        user_api_key = os.environ.get("GEMINI_API_KEY")
+        if user_api_key and not user_api_key.startswith("vertex-"):
+            return genai.Client(api_key=user_api_key)
 
-        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
-        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", DEFAULT_PROJECT_ID)
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", DEFAULT_LOCATION)
 
         try:
-            token = subprocess.check_output(
-                ["gcloud", "auth", "print-access-token"],
-                timeout=2.0
-            ).decode().strip()
-            creds = credentials.Credentials(token)
+            creds, _ = google.auth.default()
             return genai.Client(vertexai=True, project=project_id, location=location, credentials=creds)
         except Exception:
             return genai.Client(vertexai=True, project=project_id, location=location)
@@ -188,14 +188,3 @@ class ServiceImmediatelyAgent:
             "tool_responses": result_payload["tool_responses"],
             "status": "success",
         }
-
-
-async def main():
-    agent = ServiceImmediatelyAgent()
-    # Test Scenario: Query employee's open incident tickets
-    result = await agent.run("Please check all IT incident tickets submitted under my name.")
-    print(f"\nFinal Result from {agent.model_name}:\n{result['reply']}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
