@@ -32,7 +32,7 @@ elevate-project-group3/
 │   │   ├── workweek_hcm/               # WorkWeek MCP Server
 │   │   └── service_immediately/        # ServiceImmediately MCP Server
 │   └── knowledge/                      # BigQuery Knowledge Management Layer
-│       ├── graph_service.py            # BigQuery GQL & Vector engine
+│       ├── graph_service.py            # BigQuery GQL
 │       ├── curation_gate.py            # Human Curation Gate (Bands A-D)
 │       ├── corpus/                     # Altostrat Singapore Handbook corpus & graph
 │       └── ddl/                        # BigQuery SQL DDL for Nodes, Edges, & Graph
