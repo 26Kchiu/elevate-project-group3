@@ -1,12 +1,14 @@
 /**
  * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
- * Features: Auto-Model Selection, Multi-Language Alignment, and Speech-to-Text (Voice Input).
+ * Features: Auto-Model Selection, Multi-Language Alignment, and Real-Time Speech-to-Text.
  */
 
-let currentAgentMode = "auto"; // "auto", "workweek", "service_immediately"
-let currentModelChoice = "auto"; // "auto", "gemini-3.7-flash", "gemini-2.5-flash", etc.
+let currentAgentMode = "auto";
+let currentModelChoice = "auto";
+let currentVoiceLang = "zh-TW";
 let recognition = null;
 let isRecording = false;
+let basePromptText = "";
 
 document.addEventListener("DOMContentLoaded", () => {
   syncAllServices();
@@ -25,6 +27,21 @@ function handleModelChange() {
     } else {
       chip.innerHTML = `<span class="icon">⚡</span> ${escapeHtml(currentModelChoice)}`;
     }
+  }
+}
+
+function handleVoiceLangChange() {
+  const selector = document.getElementById("voiceLangSelector");
+  if (selector) {
+    currentVoiceLang = selector.value;
+  }
+  if (recognition) {
+    recognition.lang = currentVoiceLang;
+  }
+  const statusText = document.getElementById("voiceStatusText");
+  if (statusText) {
+    const langLabel = selector ? selector.options[selector.selectedIndex].text : currentVoiceLang;
+    statusText.innerText = `Listening (${langLabel})... Please speak into your microphone`;
   }
 }
 
@@ -51,7 +68,7 @@ function setAgentMode(mode) {
 }
 
 /**
- * Initialize Speech-To-Text (Web Speech API)
+ * Initialize Speech-To-Text (Web Speech API) with Real-Time Interim Streaming
  */
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -59,7 +76,7 @@ function initSpeechRecognition() {
     console.warn("Speech Recognition API is not supported in this browser.");
     const micBtn = document.getElementById("micBtn");
     if (micBtn) {
-      micBtn.title = "Speech-to-Text not supported in this browser (Use Chrome / Edge)";
+      micBtn.title = "Speech-to-Text not supported in this browser (Use Google Chrome or Edge)";
       micBtn.style.opacity = "0.5";
     }
     return;
@@ -69,29 +86,46 @@ function initSpeechRecognition() {
     recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = navigator.language || "en-US";
+    recognition.maxAlternatives = 1;
+    recognition.lang = currentVoiceLang;
 
     recognition.onstart = () => {
       isRecording = true;
+      const input = document.getElementById("messageInput");
+      basePromptText = input ? input.value.trim() : "";
       updateVoiceUI(true);
     };
 
     recognition.onresult = (event) => {
+      let interimTranscript = "";
       let finalTranscript = "";
+
       for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
         }
       }
 
+      if (finalTranscript) {
+        basePromptText = (basePromptText ? basePromptText + " " : "") + finalTranscript.trim();
+      }
+
       const input = document.getElementById("messageInput");
-      if (input && finalTranscript) {
-        input.value = (input.value ? input.value + " " : "") + finalTranscript;
+      if (input) {
+        const displayText = basePromptText + (interimTranscript ? (basePromptText ? " " : "") + interimTranscript : "");
+        input.value = displayText;
+        input.scrollTop = input.scrollHeight;
       }
     };
 
     recognition.onerror = (event) => {
       console.error("Speech recognition error:", event.error);
+      if (event.error === "not-allowed") {
+        alert("Microphone access was denied. Please allow microphone permission in your browser address bar.");
+      }
       stopSpeechRecognition();
     };
 
@@ -113,7 +147,11 @@ function toggleSpeechRecognition() {
     stopSpeechRecognition();
   } else {
     try {
-      recognition.lang = navigator.language || "en-US";
+      const selector = document.getElementById("voiceLangSelector");
+      if (selector) {
+        currentVoiceLang = selector.value;
+      }
+      recognition.lang = currentVoiceLang;
       recognition.start();
     } catch (err) {
       console.error("Error starting speech recognition:", err);
@@ -135,10 +173,16 @@ function updateVoiceUI(recording) {
   const micBtn = document.getElementById("micBtn");
   const micIcon = document.getElementById("micIcon");
   const banner = document.getElementById("voiceBanner");
+  const statusText = document.getElementById("voiceStatusText");
+  const selector = document.getElementById("voiceLangSelector");
 
   if (recording) {
     if (micBtn) micBtn.classList.add("recording");
     if (micIcon) micIcon.innerText = "⏹️";
+    if (statusText) {
+      const langLabel = selector ? selector.options[selector.selectedIndex].text : currentVoiceLang;
+      statusText.innerText = `Listening (${langLabel})... Please speak into your microphone`;
+    }
     if (banner) banner.style.display = "flex";
   } else {
     if (micBtn) micBtn.classList.remove("recording");
@@ -222,6 +266,7 @@ async function handleFormSubmit(e) {
 
   appendUserMessage(text);
   input.value = "";
+  basePromptText = "";
 
   const sendBtn = document.getElementById("sendBtn");
   if (sendBtn) sendBtn.disabled = true;
