@@ -28,7 +28,7 @@ from .tools import (
     enforce_subject_isolation,
 )
 
-DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+DEFAULT_MODEL_NAME = os.getenv("MODEL_NAME", "gemini-3.7-flash")
 DEFAULT_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
 DEFAULT_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
