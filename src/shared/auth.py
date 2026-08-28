@@ -1,7 +1,7 @@
 """SSO Authentication and Dynamic MCP Token Management Module.
 
-Validates SSO authentication with IdP (login.corp.google.com) and mints
-per-user Model Context Protocol (MCP) personal access tokens bound to employee LDAP sessions.
+Validates Google Cloud Identity-Aware Proxy (IAP) cryptographically signed JWTs
+and mints per-user Model Context Protocol (MCP) personal access tokens bound to employee LDAP sessions.
 """
 
 import datetime
@@ -10,10 +10,14 @@ import hashlib
 import hmac
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 
 CORP_IDP = "login.corp.google.com"
 DEFAULT_SALT = os.environ.get("MCP_TOKEN_SECRET_SALT", "elevate-corp-mcp-salt-2026")
+IAP_JWKS_URL = "https://www.gstatic.com/iap/verify/public_key-jwk"
+_REQUEST_ADAPTER = google_requests.Request()
 
 # In-memory token and session registry
 _TOKEN_REGISTRY: Dict[str, Dict[str, Any]] = {}
@@ -32,7 +36,6 @@ def _extract_ldap_from_email_or_user(value: str) -> str:
     """Normalize and extract clean LDAP username from email, header prefix, or string."""
     if not value:
         return ""
-    # Strip any prefix like 'accounts.google.com:'
     val = value.split(":")[-1].strip()
     if "@" in val:
         val = val.split("@")[0].strip()
@@ -41,7 +44,6 @@ def _extract_ldap_from_email_or_user(value: str) -> str:
 
 def get_current_system_ldap() -> str:
     """Retrieve current system or environment corp LDAP username."""
-    # 1. Environment overrides
     for env_key in ("CORP_USER_LDAP", "GOOGLE_USER_LDAP", "USER", "LOGNAME"):
         candidate = os.environ.get(env_key)
         if candidate:
@@ -49,7 +51,6 @@ def get_current_system_ldap() -> str:
             if clean:
                 return clean
 
-    # 2. Local system login username
     try:
         sys_user = getpass.getuser()
         clean = _extract_ldap_from_email_or_user(sys_user)
@@ -61,24 +62,64 @@ def get_current_system_ldap() -> str:
     return "ansonk"
 
 
-def validate_corp_sso(headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    """Validate SSO status against Google Corp IdP (login.corp.google.com).
+def verify_iap_jwt(iap_jwt: str, expected_audience: Optional[str] = None) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """Verify Google Cloud IAP cryptographic JWT token.
+    
+    Returns:
+        (is_valid, payload_dict, error_message)
+    """
+    if not iap_jwt:
+        return False, None, "Missing X-Goog-IAP-JWT-Assertion header"
 
-    Inspects incoming Cloud IAP / Corp proxy headers, or discovers local corporate session.
+    try:
+        aud = expected_audience or os.environ.get("IAP_EXPECTED_AUDIENCE")
+        decoded_payload = id_token.verify_token(
+            iap_jwt,
+            request=_REQUEST_ADAPTER,
+            certs_url=IAP_JWKS_URL,
+            audience=aud,
+        )
+        return True, decoded_payload, ""
+    except Exception as e:
+        return False, None, f"IAP JWT verification failed: {str(e)}"
+
+
+def validate_corp_sso(headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Validate SSO status against Google Corp IdP (login.corp.google.com) or Cloud IAP.
+
+    Inspects incoming Cloud IAP JWT headers, proxy headers, or discovers local corporate session.
     """
     req_headers = {k.lower(): v for k, v in (headers or {}).items()}
+    iap_jwt = req_headers.get("x-goog-iap-jwt-assertion")
+    iap_aud = os.environ.get("IAP_EXPECTED_AUDIENCE")
+    is_cloud_run = bool(os.environ.get("K_SERVICE") or os.environ.get("K_REVISION"))
 
-    # Check Cloud IAP or Corporate Reverse Proxy Headers
-    iap_user = (
-        req_headers.get("x-goog-authenticated-user-email")
-        or req_headers.get("x-goog-authenticated-user-id")
-        or req_headers.get("x-forwarded-user")
-        or req_headers.get("x-remote-user")
-    )
+    auth_source = "LOCAL_DEV_SESSION"
+    email = ""
+    ldap = ""
 
-    ldap = _extract_ldap_from_email_or_user(iap_user) if iap_user else get_current_system_ldap()
+    if iap_jwt:
+        is_valid, payload, err = verify_iap_jwt(iap_jwt, expected_audience=iap_aud)
+        if is_valid and payload:
+            email = payload.get("email", "")
+            ldap = _extract_ldap_from_email_or_user(email)
+            auth_source = "GOOGLE_IAP_JWT_VERIFIED"
+        else:
+            if is_cloud_run and os.environ.get("IAP_ENFORCE", "false").lower() == "true":
+                raise ValueError(f"Unauthorized IAP Request: {err}")
+
     if not ldap:
-        ldap = "ansonk"
+        # Check standard headers
+        iap_user = (
+            req_headers.get("x-goog-authenticated-user-email")
+            or req_headers.get("x-goog-authenticated-user-id")
+            or req_headers.get("x-forwarded-user")
+            or req_headers.get("x-remote-user")
+        )
+        ldap = _extract_ldap_from_email_or_user(iap_user) if iap_user else get_current_system_ldap()
+        if not ldap:
+            ldap = "ansonk"
+        email = f"{ldap}@google.com"
 
     profile_info = LDAP_TO_EMP_MAPPINGS.get(ldap, {})
     employee_id = profile_info.get("employee_id") or f"EMP-{hashlib.sha256(ldap.encode()).hexdigest()[:6].upper()}"
@@ -91,8 +132,9 @@ def validate_corp_sso(headers: Optional[Dict[str, str]] = None) -> Dict[str, Any
         "authenticated": True,
         "idp": CORP_IDP,
         "status": "VALIDATED",
+        "auth_source": auth_source,
         "ldap": ldap,
-        "email": f"{ldap}@google.com",
+        "email": email,
         "display_name": display_name,
         "employee_id": employee_id,
         "role": role,
@@ -142,8 +184,13 @@ def resolve_token_identity(token: Optional[str]) -> Dict[str, Any]:
     if token and token in _TOKEN_REGISTRY:
         return _TOKEN_REGISTRY[token]
 
-    # If token matches mcp__ pattern, dynamically derive deterministic identity
+    # If token matches mcp__ pattern, check known ldap mappings first
     if token and token.startswith("mcp__"):
+        for cand_ldap in list(LDAP_TO_EMP_MAPPINGS.keys()) + [get_current_system_ldap()]:
+            cand_rec = generate_mcp_token(cand_ldap)
+            if cand_rec["token"] == token:
+                return cand_rec
+
         tok_sub = token[5:]
         tok_hash = hashlib.sha256(tok_sub.encode()).hexdigest()[:6].upper()
         return {

@@ -36,36 +36,61 @@ function setAgentMode(mode) {
 }
 
 /**
- * Validates SSO authentication against login.corp.google.com and generates
- * a user-bound MCP Token via POST /api/mcp-tokens with user's LDAP.
+ * Validates SSO authentication / Session and generates or loads
+ * a user-bound MCP Token via POST /api/mcp-tokens or local session.
  */
 async function initSSOAndSession() {
   try {
-    // 1. Validate SSO status to login.corp.google.com
-    const ssoRes = await fetch("/api/auth/sso-status");
-    if (ssoRes.ok) {
-      const ssoData = await ssoRes.json();
-      console.log("SSO Authenticated:", ssoData);
+    const storedSessionRaw = localStorage.getItem("elevate_session");
+    let activeUserLdap = "";
 
-      // Update UI elements with SSO profile
+    // 1. Validate SSO status or IAP
+    const ssoRes = await fetch("/api/auth/sso-status");
+    let ssoData = null;
+    if (ssoRes.ok) {
+      ssoData = await ssoRes.json();
+    }
+
+    // If no session stored and not authenticated via real IAP, redirect to login page
+    if (!storedSessionRaw && (!ssoData || ssoData.auth_source !== "GOOGLE_IAP_JWT_VERIFIED")) {
+      window.location.href = "/login";
+      return;
+    }
+
+    let sessionData = ssoData;
+    if (storedSessionRaw) {
+      try {
+        sessionData = JSON.parse(storedSessionRaw);
+      } catch (e) {
+        console.error("Failed to parse stored session", e);
+      }
+    }
+
+    if (sessionData) {
+      activeUserLdap = sessionData.ldap || "ansonk";
+      console.log("Active Session Authenticated:", sessionData);
+
+      // Update UI elements with profile
       const idpBadge = document.getElementById("ssoIdpBadge");
-      if (idpBadge) idpBadge.innerText = ssoData.idp || "login.corp.google.com";
+      if (idpBadge) {
+        idpBadge.innerText = sessionData.auth_source === "GOOGLE_IAP_JWT_VERIFIED" ? "IAP (JWT Verified)" : (sessionData.idp || "login.corp.google.com");
+      }
 
       const ldapLabel = document.getElementById("ssoLdapLabel");
-      if (ldapLabel) ldapLabel.innerText = ssoData.ldap || "ansonk";
+      if (ldapLabel) ldapLabel.innerText = sessionData.ldap || "ansonk";
 
       const userName = document.getElementById("userName");
-      if (userName) userName.innerText = ssoData.display_name || ssoData.ldap;
+      if (userName) userName.innerText = sessionData.display_name || sessionData.ldap;
 
       const userRole = document.getElementById("userRole");
-      if (userRole) userRole.innerText = ssoData.email || `${ssoData.ldap}@google.com`;
+      if (userRole) userRole.innerText = sessionData.email || `${sessionData.ldap}@google.com`;
 
       const userIdBadge = document.getElementById("userIdBadge");
-      if (userIdBadge) userIdBadge.innerText = `ID: ${ssoData.employee_id || 'EMP-545'}`;
+      if (userIdBadge) userIdBadge.innerText = `ID: ${sessionData.employee_id || 'EMP-545'}`;
 
       const avatar = document.getElementById("userAvatar");
-      if (avatar && ssoData.display_name) {
-        const initials = ssoData.display_name
+      if (avatar && sessionData.display_name) {
+        const initials = sessionData.display_name
           .split(" ")
           .filter(Boolean)
           .map(w => w[0])
@@ -75,24 +100,20 @@ async function initSSOAndSession() {
         avatar.innerText = initials || "GO";
       }
 
-      // 2. Generate MCP Token by calling /api/mcp-tokens with LDAP in JSON body
-      const userLdap = ssoData.ldap || "ansonk";
-      const tokenRes = await fetch("/api/mcp-tokens", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ ldap: userLdap })
-      });
-
-      if (tokenRes.ok) {
-        const tokenData = await tokenRes.json();
-        const generatedToken = tokenData.token || "";
-        const tokenInput = document.getElementById("mcpTokenInput");
-        if (tokenInput) {
-          tokenInput.value = generatedToken;
+      // Populate or generate MCP token
+      const tokenInput = document.getElementById("mcpTokenInput");
+      if (sessionData.token) {
+        if (tokenInput) tokenInput.value = sessionData.token;
+      } else {
+        const tokenRes = await fetch("/api/mcp-tokens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ldap: activeUserLdap })
+        });
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          if (tokenInput) tokenInput.value = tokenData.token || "";
         }
-        console.log("Dynamically minted MCP Token for LDAP", userLdap);
       }
     }
   } catch (err) {
@@ -100,6 +121,14 @@ async function initSSOAndSession() {
   } finally {
     await syncAllServices();
   }
+}
+
+async function handleSignOut() {
+  localStorage.removeItem("elevate_session");
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch (e) {}
+  window.location.href = "/login";
 }
 
 async function syncAllServices() {

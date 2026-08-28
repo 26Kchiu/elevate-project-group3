@@ -53,7 +53,7 @@ class WorkWeekHCMAgent:
         if "GEMINI_API_KEY" in os.environ:
             return genai.Client()
 
-        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
         location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
         try:

@@ -46,7 +46,7 @@
           <span class="badge" style="background: #1e3a5f; color: #8ab4f8; font-size: 10px; padding: 2px 6px; border-radius: 4px;" id="ssoIdpBadge">login.corp.google.com</span>
         </div>
         <div style="color: #9aa0a6; font-size: 11px;">
-          LDAP Session: <strong id="ssoLdapLabel" style="color: #e8eaed;">ansonk</strong>
+          LDAP Session: <strong id="ssoLdapLabel" style="color: #e8eaed;">--</strong>
         </div>
       </div>
 
@@ -71,13 +71,16 @@
       <!-- Authenticated Identity Card -->
       <div class="section-title">AUTHENTICATED IDENTITY</div>
       <div class="employee-card" id="userCard">
-        <div class="emp-avatar" id="userAvatar">AK</div>
+        <div class="emp-avatar" id="userAvatar">--</div>
         <div class="emp-details">
-          <div class="emp-name" id="userName">Anson K</div>
-          <div class="emp-title" id="userRole">ansonk@google.com</div>
-          <div class="emp-id" id="userIdBadge">ID: EMP-545</div>
+          <div class="emp-name" id="userName">Loading...</div>
+          <div class="emp-title" id="userRole">--</div>
+          <div class="emp-id" id="userIdBadge">ID: --</div>
         </div>
       </div>
+      <button class="btn btn-secondary btn-sm" style="width: 100%; margin-top: -4px; margin-bottom: 8px;" onclick="handleSignOut()">
+        🚪 Switch Account / Sign Out
+      </button>
 
       <!-- WorkWeek HCM Summary -->
       <div class="section-title">WORKWEEK HCM (LEAVES)</div>

@@ -75,7 +75,7 @@ def extract_nested_exception(e: BaseException) -> str:
 
 def get_shared_genai_client() -> genai.Client:
     """Create a non-blocking GenAI client using ADC credentials directly."""
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "harry-project-elevate")
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "elevate-taiwan-cohort-2")
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
     # If user provided a real Gemini API Key, use API key mode
@@ -115,6 +115,11 @@ class ChatRequest(BaseModel):
 
 class GenerateMCPTokenRequest(BaseModel):
     ldap: str
+
+
+class LoginRequest(BaseModel):
+    ldap: str
+    password: Optional[str] = None
 
 
 def auto_route_query(query: str) -> str:
@@ -158,6 +163,31 @@ async def serve_index():
     if not index_file.exists():
         raise HTTPException(status_code=404, detail="Static index.html not found.")
     return FileResponse(str(index_file))
+
+
+@app.get("/login")
+async def serve_login():
+    """Serve the interactive Login Page."""
+    login_file = STATIC_DIR / "login.html"
+    if not login_file.exists():
+        raise HTTPException(status_code=404, detail="Static login.html not found.")
+    return FileResponse(str(login_file))
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: LoginRequest):
+    """Authenticate user and mint session token."""
+    ldap = req.ldap.strip() if req.ldap else ""
+    if not ldap:
+        raise HTTPException(status_code=400, detail="LDAP/Username cannot be empty.")
+    token_record = generate_mcp_token(ldap)
+    return token_record
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    """Logout current session."""
+    return {"status": "LOGGED_OUT", "message": "Successfully logged out."}
 
 
 @app.get("/api/auth/sso-status")

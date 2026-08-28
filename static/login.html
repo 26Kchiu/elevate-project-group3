@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — Elevate Multi-Agent Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 50% 20%, #1e293b 0%, #0b0f19 75%);
+      min-height: 100vh;
+      overflow: auto;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 420px;
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: var(--radius-lg);
+      padding: 40px 32px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(59, 130, 246, 0.15);
+      backdrop-filter: blur(12px);
+    }
+    .login-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .login-logo {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 16px;
+      background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+    }
+    .login-header h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+    .login-header p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 0.95rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    .btn-submit {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent-primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      margin-top: 8px;
+    }
+    .btn-submit:hover {
+      background: var(--accent-primary-hover);
+    }
+    .btn-submit:active {
+      transform: scale(0.99);
+    }
+    .btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .error-box {
+      display: none;
+      padding: 10px 14px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: var(--radius-sm);
+      color: #fca5a5;
+      font-size: 0.82rem;
+      margin-bottom: 18px;
+    }
+    .login-footer {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo">EL</div>
+      <h1>Elevate Multi-Agent Portal</h1>
+      <p>HCM &bull; ITSM Specialist Intelligence Hub</p>
+    </div>
+
+    <div id="errorBox" class="error-box"></div>
+
+    <form id="customLoginForm" onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label" for="customLdapInput">Corporate LDAP / Username</label>
+        <input 
+          class="form-input" 
+          type="text" 
+          id="customLdapInput" 
+          placeholder="Enter corporate LDAP (e.g. your_ldap)" 
+          required 
+          autocomplete="username"
+          autofocus
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="customPasswordInput">Password / Security Key (Optional)</label>
+        <input 
+          class="form-input" 
+          type="password" 
+          id="customPasswordInput" 
+          placeholder="••••••••••••" 
+          autocomplete="current-password"
+        />
+      </div>
+
+      <button type="submit" id="submitBtn" class="btn-submit">Sign In to Portal</button>
+    </form>
+
+    <div class="login-footer">
+      Protected by Google Cloud Identity &amp; Access Architecture
+    </div>
+  </div>
+
+  <script>
+    async function handleLogin(e) {
+      e.preventDefault();
+      const errBox = document.getElementById('errorBox');
+      const submitBtn = document.getElementById('submitBtn');
+      const ldapInput = document.getElementById('customLdapInput');
+      const ldap = ldapInput.value.trim();
+
+      if (!ldap) return;
+
+      errBox.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Signing in...';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ldap: ldap })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || 'Login failed');
+        }
+        const session = await res.json();
+        localStorage.setItem('elevate_session', JSON.stringify(session));
+        window.location.href = '/';
+      } catch (err) {
+        errBox.innerText = err.message;
+        errBox.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Sign In to Portal';
+      }
+    }
+  </script>
+</body>
+</html>

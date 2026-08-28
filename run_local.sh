@@ -14,10 +14,12 @@ echo " ServiceImmediately MCP: https://mock-saas.aishprabhat.demo.altostrat.com/
 echo " Web Portal URL:         http://localhost:$PORT"
 if [ -f "$HOME/.local/share/uv/tools/google-adk/bin/uvicorn" ]; then
     "$HOME/.local/share/uv/tools/google-adk/bin/uvicorn" src.app:app --host 0.0.0.0 --port "$PORT" --reload
-elif command -v uvicorn &> /dev/null; then
-    uvicorn src.app:app --host 0.0.0.0 --port "$PORT" --reload
+elif [ -f "$DIR/../.venv/bin/uvicorn" ]; then
+    "$DIR/../.venv/bin/uvicorn" src.app:app --host 0.0.0.0 --port "$PORT" --reload
 elif [ -f "$DIR/.venv/bin/uvicorn" ]; then
     "$DIR/.venv/bin/uvicorn" src.app:app --host 0.0.0.0 --port "$PORT" --reload
+elif command -v uvicorn &> /dev/null; then
+    uvicorn src.app:app --host 0.0.0.0 --port "$PORT" --reload
 else
     python3 -m uvicorn src.app:app --host 0.0.0.0 --port "$PORT" --reload
 fi
