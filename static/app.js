@@ -1,9 +1,9 @@
 /**
- * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
- * Features: Auto-Model Selection, Model Auto-Language Alignment, Real-Time Speech-to-Text with 1-Click Lang Pill.
+ * Frontend logic for Elevate Tri-Agent Portal (Policy, WorkWeek HCM & ServiceImmediately ITSM).
+ * Features: Auto-Model Selection, Tri-Agent Routing, and Live Speech-to-Text.
  */
 
-let currentAgentMode = "auto";
+let currentAgentMode = "auto"; // "auto", "policy", "workweek", "service_immediately"
 let currentModelChoice = "auto";
 let recognition = null;
 let isRecording = false;
@@ -56,15 +56,18 @@ function handleModelChange() {
 function setAgentMode(mode) {
   currentAgentMode = mode;
   const btnAuto = document.getElementById("btnModeAuto");
+  const btnPolicy = document.getElementById("btnModePolicy");
   const btnHcm = document.getElementById("btnModeHcm");
   const btnItsm = document.getElementById("btnModeItsm");
 
   if (btnAuto) btnAuto.classList.toggle("active", mode === "auto");
+  if (btnPolicy) btnPolicy.classList.toggle("active", mode === "policy");
   if (btnHcm) btnHcm.classList.toggle("active", mode === "workweek");
   if (btnItsm) btnItsm.classList.toggle("active", mode === "service_immediately");
 
   const subtitleLabels = {
-    "auto": "Interactive Assistant &bull; Auto-Routing to WorkWeek HCM &amp; ServiceImmediately ITSM",
+    "auto": "Interactive Assistant &bull; Auto-Routing across Policy Agent, WorkWeek HCM &amp; ServiceImmediately ITSM",
+    "policy": "Dedicated Specialist &bull; Grounded HR Policy Agent (BigQuery Conversational Analytics)",
     "workweek": "Dedicated Specialist &bull; WorkWeek HCM Agent (/work-week/mcp/)",
     "service_immediately": "Dedicated Specialist &bull; ServiceImmediately ITSM Agent (/service-immediately/mcp/)"
   };
@@ -332,7 +335,7 @@ function appendTypingIndicator() {
   const id = "typing-" + Date.now();
   row.id = id;
   row.className = "message-row agent";
-  row.innerHTML = `<div class="agent-bubble"><em>⚡ Multi-Agent is analyzing intent and executing SaaS MCP tools...</em></div>`;
+  row.innerHTML = `<div class="agent-bubble"><em>⚡ Tri-Agent Hub is analyzing intent and coordinating specialist agents...</em></div>`;
   stream.appendChild(row);
   stream.scrollTop = stream.scrollHeight;
   return id;
@@ -350,19 +353,38 @@ function appendAgentResponse(data) {
   row.className = "message-row agent";
 
   const agentName = data.agent_name || "Specialist Agent";
-  const isItsm = agentName.toLowerCase().includes("serviceimmediately") || agentName.toLowerCase().includes("itsm");
-  const tagClass = isItsm ? "agent-tag itsm" : "agent-tag";
-  const tagIcon = isItsm ? "🎫" : "💼";
+  const nameLower = agentName.toLowerCase();
 
-  let formattedReply = formatMarkdown(data.reply || data.result || "");
+  let tagClass = "agent-tag";
+  let tagIcon = "💼";
+
+  if (nameLower.includes("policy")) {
+    tagClass = "agent-tag policy";
+    tagIcon = "📜";
+  } else if (nameLower.includes("serviceimmediately") || nameLower.includes("itsm")) {
+    tagClass = "agent-tag itsm";
+    tagIcon = "🎫";
+  }
+
+  let formattedReply = formatMarkdown(data.reply || data.result || data.text || "");
   let html = `
     <div class="agent-bubble">
       <div class="${tagClass}">
-        <span>${tagIcon}</span> ${escapeHtml(agentName)} &bull; ${escapeHtml(data.model || "Gemini")}
+        <span>${tagIcon}</span> ${escapeHtml(agentName)} &bull; ${escapeHtml(data.model || "Gemini / BigQuery")}
       </div>
       <div>${formattedReply}</div>
   `;
 
+  // Citations Badge if Policy Agent
+  if (data.citations && data.citations.length > 0) {
+    html += `
+      <div class="tool-call-badge" style="background-color: rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.4); color: #DDD6FE;">
+        <span>📚 <strong>Handbook Citations:</strong> ${escapeHtml(data.citations.join(" | "))}</span>
+      </div>
+    `;
+  }
+
+  // MCP Tool Execution Badges
   if (data.tool_calls && data.tool_calls.length > 0) {
     for (const tc of data.tool_calls) {
       const argsStr = JSON.stringify(tc.args || {});
@@ -397,7 +419,7 @@ function clearChat() {
     stream.innerHTML = `
       <div class="message-row system">
         <div class="system-bubble">
-          Chat cleared. Ready for new HR/HCM or IT/ITSM inquiries. (支援自動語言偵測與語音輸入)
+          Chat cleared. Ready for Policy, WorkWeek HCM, or ServiceImmediately inquiries. (支援自動分流、多國語言與語音輸入)
         </div>
       </div>
     `;
@@ -411,7 +433,24 @@ function escapeHtml(str) {
 
 function formatMarkdown(text) {
   if (!text) return "";
-  let out = escapeHtml(text);
+
+  // Convert markdown links [Label](url) safely before escaping
+  const linkMatches = [];
+  let tokenized = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, (match, label, url) => {
+    const placeholder = `__LINK_PLACEHOLDER_${linkMatches.length}__`;
+    linkMatches.push({ label, url });
+    return placeholder;
+  });
+
+  let out = escapeHtml(tokenized);
+
+  // Restore hyperlinks safely
+  linkMatches.forEach((item, idx) => {
+    const placeholder = `__LINK_PLACEHOLDER_${idx}__`;
+    const safeLabel = escapeHtml(item.label);
+    const safeUrl = item.url.replace(/"/g, '&quot;');
+    out = out.replace(placeholder, `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">📄 ${safeLabel}</a>`);
+  });
 
   // Markdown tables
   if (out.includes('|')) {

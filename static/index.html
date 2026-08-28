@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Elevate Multi-Agent Portal — HCM &amp; ITSM</title>
+  <title>Elevate Tri-Agent Portal — Policy, HCM &amp; ITSM</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=2.5">
+  <link rel="stylesheet" href="/static/styles.css?v=3.0">
 </head>
 <body>
   <div class="app-container">
@@ -16,22 +16,25 @@
       <div class="brand">
         <div class="brand-logo">EL</div>
         <div class="brand-info">
-          <h2>Elevate Multi-Agent</h2>
-          <span class="badge badge-primary">HCM &bull; ITSM Hub</span>
+          <h2>Elevate Tri-Agent Hub</h2>
+          <span class="badge badge-primary">Policy &bull; HCM &bull; ITSM</span>
         </div>
       </div>
 
       <!-- Agent Target Selector -->
       <div class="section-title">ACTIVE AGENT TARGET</div>
-      <div class="agent-mode-selector">
+      <div class="agent-mode-selector-tri">
         <button class="mode-btn active" id="btnModeAuto" onclick="setAgentMode('auto')">
-          <span>🤖</span> Auto-Route
+          <span>🤖</span> Auto
+        </button>
+        <button class="mode-btn" id="btnModePolicy" onclick="setAgentMode('policy')">
+          <span>📜</span> Policy
         </button>
         <button class="mode-btn" id="btnModeHcm" onclick="setAgentMode('workweek')">
-          <span>💼</span> WorkWeek HCM
+          <span>💼</span> HCM
         </button>
         <button class="mode-btn" id="btnModeItsm" onclick="setAgentMode('service_immediately')">
-          <span>🎫</span> ServiceImmediately
+          <span>🎫</span> ITSM
         </button>
       </div>
 
@@ -89,31 +92,49 @@
         </div>
       </div>
 
+      <!-- Policy Agent Knowledge Summary -->
+      <div class="section-title">POLICY KNOWLEDGE LAYER</div>
+      <div class="policy-summary-card">
+        <div class="policy-summary-header">
+          <span>📜 BigQuery Data Analytics</span>
+          <span class="badge-policy">Grounding Active</span>
+        </div>
+        <div class="policy-snippet">
+          Handbook PDF &amp; Clause Citations [cl. 1.1 ~ 5.4]
+        </div>
+      </div>
+
       <!-- Subject Isolation Policy Notice -->
       <div class="isolation-notice">
         <span class="lock-icon">🔒</span>
         <div>
-          <strong>Subject Isolation &amp; Auto-Language</strong>
-          <p>Locked to EMP-545. Model automatically detects your language (中文, English, etc.) from typed or spoken input.</p>
+          <strong>Subject Isolation &amp; Auto-Routing</strong>
+          <p>Personal data locked to EMP-545. Policy questions grounded with BigQuery Conversational AI.</p>
         </div>
       </div>
 
       <!-- Quick Actions -->
-      <div class="section-title">QUICK ACTIONS (PROMPTS)</div>
+      <div class="section-title">QUICK ACTIONS (TRI-AGENT PROMPTS)</div>
       <div class="quick-actions">
-        <!-- English Prompts -->
-        <button class="action-btn" onclick="sendQuickPrompt('What are my current remaining vacation and sick leave balances in WorkWeek?')">
-          <span>📊</span> Check Leave Balances (EN)
+        <!-- Policy Prompts -->
+        <button class="action-btn policy-btn" onclick="sendQuickPrompt('What is the company sick leave policy in the employee handbook?')">
+          <span>📜</span> Check Sick Leave Policy (EN)
         </button>
+        <button class="action-btn policy-btn" onclick="sendQuickPrompt('請查詢員工手冊中關於產假、育嬰假與陪產假的請假天數與資格規定？')">
+          <span>🇹🇼</span> 查詢產假/育嬰假政策 (中文)
+        </button>
+        <!-- HCM Prompts -->
         <button class="action-btn" onclick="sendQuickPrompt('請幫我查詢我目前在 WorkWeek 的休假與病假剩餘天數？')">
-          <span>🇹🇼</span> 查詢假單餘額 (中文)
+          <span>💼</span> 查詢個人假單餘額 (HCM)
         </button>
+        <!-- ITSM Prompts -->
         <button class="action-btn" onclick="sendQuickPrompt('請幫我查詢我目前名下所有的 IT 報修工單狀態 (ServiceImmediately)。')">
-          <span>🎫</span> 查詢 IT 報修工單 (中文)
+          <span>🎫</span> 查詢 IT 報修工單 (ITSM)
         </button>
         <button class="action-btn" onclick="sendQuickPrompt('Create an IT support ticket with Category Hardware, Priority 2 - High, and Short Description: My external monitor display is flickering continuously.')">
-          <span>💻</span> Create Hardware Ticket (EN)
+          <span>💻</span> Create Hardware Ticket (ITSM)
         </button>
+        <!-- Security Test -->
         <button class="action-btn danger-test-btn" onclick="sendQuickPrompt('請幫我查詢員工 EMP-999 或 Alex Rivera 的休假餘額與 IT 工單？')">
           <span>🚫</span> 測試跨員工查詢 (安全阻擋)
         </button>
@@ -122,8 +143,8 @@
       <div class="service-status">
         <div class="status-indicator online"></div>
         <div class="status-text">
-          <div class="status-title">Multi-Agent SaaS MCP</div>
-          <div class="status-sub">WorkWeek &bull; ServiceImmediately</div>
+          <div class="status-title">Tri-Agent Enterprise Hub</div>
+          <div class="status-sub">Policy &bull; WorkWeek &bull; ServiceImmediately</div>
         </div>
       </div>
     </aside>
@@ -133,15 +154,15 @@
       <!-- Header -->
       <header class="chat-header">
         <div class="header-left">
-          <h1>Elevate HR &amp; ITSM Multi-Agent System</h1>
-          <p class="subtitle" id="activeAgentSubtitle">Interactive Assistant &bull; WorkWeek HCM &amp; ServiceImmediately ITSM</p>
+          <h1>Elevate Tri-Agent System</h1>
+          <p class="subtitle" id="activeAgentSubtitle">Interactive Assistant &bull; Policy Agent, WorkWeek HCM &amp; ServiceImmediately ITSM</p>
         </div>
         <div class="header-right">
           <span class="security-chip" id="modelChip">
             <span class="icon">🤖</span> Auto Gemini
           </span>
           <span class="security-chip">
-            <span class="icon">🌐</span> Auto-Detect Response
+            <span class="icon">🌐</span> Tri-Agent Auto Route
           </span>
           <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
         </div>
@@ -151,9 +172,11 @@
       <div class="chat-stream" id="chatStream">
         <div class="message-row system">
           <div class="system-bubble">
-            ✨ Welcome to the <strong>Elevate Multi-Agent Portal</strong>!<br>
-            • <strong>Auto Language Detection</strong>: Type or speak in any language (<strong>English, 繁體中文, 簡體中文, 日本語</strong>, etc.). The Gemini model will automatically detect and respond in your language.<br>
-            • <strong>Voice Input (Speech-To-Text)</strong>: Click the 🎙️ microphone button next to Send to speak your question! Use the 🇹🇼/🇺🇸 toggle pill to switch voice recognition language with 1 click.
+            ✨ Welcome to the <strong>Elevate Tri-Agent Portal</strong>!<br>
+            • <strong>Policy Agent (📜)</strong>: Answers company policy &amp; handbook questions backed by BigQuery Conversational Analytics &amp; citations.<br>
+            • <strong>WorkWeek HCM Agent (💼)</strong>: Manages your personal leave balances, PTO requests, and employee profile.<br>
+            • <strong>ServiceImmediately Agent (🎫)</strong>: Handles IT support tickets, hardware/software incidents, and repairs.<br>
+            • <strong>Voice Input &amp; Multi-Lang</strong>: Click 🎙️ or the 🇹🇼/🇺🇸 pill to speak or type in any language.
           </div>
         </div>
       </div>
@@ -173,7 +196,7 @@
           <textarea
             id="messageInput"
             rows="1"
-            placeholder="Type or click 🎙️ to speak (e.g. 請查詢我的休假餘額 / Check my leave balances)..."
+            placeholder="Ask anything (e.g. 查詢產假規定 / Check leave balances / List my IT tickets)..."
             onkeydown="handleKeyDown(event)"
           ></textarea>
 
@@ -209,12 +232,12 @@
           </button>
         </form>
         <div class="composer-footnote">
-          Powered by <strong>Google ADK</strong> &amp; <strong>Gemini Multi-Agent</strong> &bull; WorkWeek &amp; ServiceImmediately MCP
+          Powered by <strong>Google ADK</strong> &amp; <strong>BigQuery + Gemini Multi-Agent</strong> &bull; Policy, WorkWeek &amp; ServiceImmediately
         </div>
       </footer>
     </main>
   </div>
 
-  <script src="/static/app.js?v=2.5"></script>
+  <script src="/static/app.js?v=3.0"></script>
 </body>
 </html>

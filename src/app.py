@@ -1,4 +1,4 @@
-"""FastAPI Unified Application for Elevate HR & ITSM Multi-Agent System."""
+"""FastAPI Unified Application for Elevate HR & ITSM Multi-Agent System (Tri-Agent Hub)."""
 
 import json
 import os
@@ -31,7 +31,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Import both specialist agents (without modifying workweek_hcm_agent codebase)
+# Import all three specialist agents
+from src.agents.policy_agent import PolicyAgent
 from src.agents.workweek_hcm_agent import WorkWeekHCMAgent
 from src.agents.service_immediately_agent import ServiceImmediatelyAgent
 from src.agents.service_immediately_agent.tools import list_tickets as itsm_list_tickets
@@ -42,9 +43,9 @@ from src.agents.workweek_hcm_agent.tools import (
 )
 
 app = FastAPI(
-    title="Elevate HR & ITSM Multi-Agent System",
-    description="Unified Portal for WorkWeek HCM Agent & ServiceImmediately ITSM Agent",
-    version="2.2.0",
+    title="Elevate Multi-Agent System (Policy • HCM • ITSM)",
+    description="Unified Enterprise Portal for Policy Agent, WorkWeek HCM Agent, and ServiceImmediately ITSM Agent",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -76,6 +77,7 @@ CANDIDATE_MODELS = [
     "gemini-2.0-flash",
 ]
 
+_policy_agent = None
 _hcm_agent = None
 _itsm_agent = None
 
@@ -103,6 +105,14 @@ def get_shared_genai_client() -> genai.Client:
         return genai.Client(vertexai=True, project=project_id, location=location)
 
 
+def get_policy_agent() -> PolicyAgent:
+    global _policy_agent
+    if _policy_agent is None:
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", DEFAULT_PROJECT_ID)
+        _policy_agent = PolicyAgent(project_id=project_id)
+    return _policy_agent
+
+
 def get_hcm_agent(model_name: str = "auto") -> WorkWeekHCMAgent:
     global _hcm_agent
     if _hcm_agent is None or (model_name != "auto" and _hcm_agent.model_name != model_name):
@@ -122,7 +132,7 @@ def get_itsm_agent(model_name: str = "auto") -> ServiceImmediatelyAgent:
 
 class ChatRequest(BaseModel):
     message: str
-    agent_target: Optional[str] = "auto"  # "workweek", "service_immediately", or "auto"
+    agent_target: Optional[str] = "auto"  # "policy", "workweek", "service_immediately", or "auto"
     model: Optional[str] = "auto"         # "auto", "gemini-3.7-flash", "gemini-2.5-flash", etc.
     employee_id: Optional[str] = None
     mcp_token: Optional[str] = None
@@ -131,6 +141,8 @@ class ChatRequest(BaseModel):
 def auto_route_query(query: str) -> str:
     """Intelligently route query to the right specialist agent based on intent keywords."""
     q_lower = query.lower()
+
+    # 1. ITSM / Hardware / Software Ticket Intent -> ServiceImmediately Agent
     itsm_keywords = [
         "ticket", "incident", "it support", "laptop", "hardware", "software",
         "vpn", "network", "access", "iam", "password", "screen", "monitor",
@@ -140,6 +152,21 @@ def auto_route_query(query: str) -> str:
     for kw in itsm_keywords:
         if kw in q_lower:
             return "service_immediately"
+
+    # 2. General Company Policy & Handbook Rules -> Policy Agent
+    policy_keywords = [
+        "policy", "handbook", "rule", "guideline", "clause", "entitled",
+        "eligible", "eligibility", "maternity", "paternity", "bereavement",
+        "sabbatical", "expense reimbursement", "hospitalization", "code of conduct",
+        "medical leave", "outpatient", "insurance", "allowance", "overtime",
+        "政策", "手冊", "規定", "辦法", "資格", "育嬰假", "產假", "喪假", "公假",
+        "報銷規定", "合規", "福利手冊", "員工守則", "保險", "補助", "津貼", "病假規定"
+    ]
+    for kw in policy_keywords:
+        if kw in q_lower:
+            return "policy"
+
+    # 3. Personal Operations (Checking Balance, Submitting Leave, Personal Profile) -> WorkWeek HCM
     return "workweek"
 
 
@@ -148,7 +175,7 @@ def enrich_prompt_with_language_alignment(prompt: str) -> str:
     instruction_note = (
         "\n[Instruction: Detect user's language and reply in the EXACT SAME language. "
         "If Chinese (繁體中文/簡體中文), reply completely in Chinese. If English, reply in English. "
-        "Keep IDs and numbers precise.]"
+        "Keep IDs, clause citations, and numbers precise.]"
     )
     return prompt + instruction_note
 
@@ -164,7 +191,7 @@ async def serve_index():
 
 @app.get("/api/status")
 async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
-    """Check connectivity and session info for both WorkWeek and ServiceImmediately MCP servers."""
+    """Check connectivity and session info for Policy Agent, WorkWeek, and ServiceImmediately."""
     token = x_mcp_token or DEFAULT_MCP_TOKEN
     model = os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)
     project = os.getenv("GOOGLE_CLOUD_PROJECT", DEFAULT_PROJECT_ID)
@@ -175,18 +202,22 @@ async def get_system_status(x_mcp_token: Optional[str] = Header(None)):
         "default_model": model,
         "supported_models": CANDIDATE_MODELS,
         "agents": {
+            "policy_agent": {
+                "name": "Policy Agent (HR Knowledge)",
+                "engine": "BigQuery Conversational Analytics",
+                "data_agent_id": "agent_98c36166-3d31-471e-8fce-4dc446069ad7",
+                "status": "ONLINE",
+            },
             "workweek_hcm": {
                 "name": "WorkWeek HCM Agent",
                 "mcp_url": "https://mock-saas.aishprabhat.demo.altostrat.com/work-week/mcp/",
                 "model": "Auto-Selected Gemini",
-                "project": project,
                 "status": "ONLINE",
             },
             "service_immediately": {
                 "name": "ServiceImmediately Agent",
                 "mcp_url": "https://mock-saas.aishprabhat.demo.altostrat.com/service-immediately/mcp/",
                 "model": "Auto-Selected Gemini",
-                "project": project,
                 "status": "ONLINE",
             },
         },
@@ -228,7 +259,7 @@ async def get_itsm_tickets(x_mcp_token: Optional[str] = Header(None)):
 
 @app.post("/api/chat")
 async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header(None)):
-    """Interactive multi-agent chat endpoint with auto-routing and auto-model selection."""
+    """Interactive multi-agent chat endpoint with auto-routing across Policy, HCM, and ITSM."""
     token = req.mcp_token or x_mcp_token or DEFAULT_MCP_TOKEN
     target = req.agent_target or "auto"
     model_choice = req.model or "auto"
@@ -236,18 +267,36 @@ async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header
     if target == "auto":
         target = auto_route_query(req.message)
 
-    enriched_prompt = enrich_prompt_with_language_alignment(req.message)
-
     try:
-        if target == "service_immediately":
+        # Route 1: Policy Agent (BigQuery Conversational Analytics)
+        if target in ("policy", "policy_agent"):
+            agent = get_policy_agent()
+            resp = await agent.process_query(query=req.message)
+            return {
+                "agent_name": "Policy Agent",
+                "model": "BigQuery Conversational Analytics",
+                "reply": resp.text,
+                "response_class": resp.response_class,
+                "citations": resp.citations,
+                "provenance": resp.provenance,
+                "employee_id": req.employee_id or "EMP-545",
+                "tool_calls": [],
+                "tool_responses": [],
+            }
+
+        # Route 2: ServiceImmediately ITSM Agent
+        elif target in ("service_immediately", "itsm"):
+            enriched_prompt = enrich_prompt_with_language_alignment(req.message)
             agent = get_itsm_agent(model_name=model_choice)
-            result = await agent.run(
+            return await agent.run(
                 user_prompt=enriched_prompt,
                 employee_id=req.employee_id or "EMP-545",
                 mcp_token=token,
             )
+
+        # Route 3: WorkWeek HCM Agent
         else:
-            # For HCM, try candidate models if in auto mode
+            enriched_prompt = enrich_prompt_with_language_alignment(req.message)
             models_to_try = CANDIDATE_MODELS if model_choice == "auto" else [model_choice] + [m for m in CANDIDATE_MODELS if m != model_choice]
             result = None
             last_err = None
@@ -266,8 +315,8 @@ async def chat_interaction(req: ChatRequest, x_mcp_token: Optional[str] = Header
                     continue
             if result is None and last_err:
                 raise last_err
+            return result
 
-        return result
     except BaseException as e:
         err_msg = extract_nested_exception(e)
         raise HTTPException(status_code=500, detail=f"Agent execution error: {err_msg}")
@@ -277,5 +326,5 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 8080))
-    print(f"Starting Elevate HR & ITSM Multi-Agent Portal at http://0.0.0.0:{port}")
+    print(f"Starting Elevate Tri-Agent Portal at http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

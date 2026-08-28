@@ -5,28 +5,29 @@ PROJECT_ID="elevate-taiwan-cohort-2"
 REGION="us-central1"
 REPO_NAME="elevate-repo"
 SERVICE_NAME="elevate-multi-agent-app"
-IMAGE_TAG="v1.0.0"
+IMAGE_TAG="v3.0.0"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/multi-agent:${IMAGE_TAG}"
 SA_NAME="sa-elevate-agent"
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 echo "==================================================================="
-echo " Deploying Elevate Multi-Agent Portal to Google Cloud Run"
+echo " Deploying Elevate Tri-Agent Portal to Google Cloud Run"
 echo " Project:         $PROJECT_ID"
 echo " Region:          $REGION"
 echo " Image:           $IMAGE_URI"
 echo " Service Name:    $SERVICE_NAME"
-echo " Model:           gemini-3.7-flash"
-echo " Public Access:   Internet (allow-unauthenticated)"
+echo " Agents:          Policy Agent, WorkWeek HCM, ServiceImmediately"
 echo "==================================================================="
 
 # 1. Enable Required GCP APIs
-echo "[*] Enabling required APIs (Cloud Run, Artifact Registry, Cloud Build, Vertex AI)..."
+echo "[*] Enabling required APIs (Cloud Run, Artifact Registry, Cloud Build, Vertex AI, BigQuery)..."
 gcloud services enable \
   run.googleapis.com \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
   aiplatform.googleapis.com \
+  bigquery.googleapis.com \
+  geminidataanalytics.googleapis.com \
   storage.googleapis.com \
   --project="$PROJECT_ID"
 
@@ -36,11 +37,10 @@ COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
 
 echo "[*] Project Number: $PROJECT_NUMBER"
-echo "[*] Granting Storage and Artifact Registry permissions to Cloud Build service accounts..."
+echo "[*] Ensuring Storage and Artifact Registry permissions for Cloud Build service accounts..."
 
-# 2. Fix Cloud Build Storage & Artifact Registry Permissions
+# 2. Ensure Cloud Build Storage & Artifact Registry Permissions
 for SA in "$COMPUTE_SA" "$CLOUDBUILD_SA"; do
-  echo "  - Binding roles for $SA..."
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${SA}" \
     --role="roles/storage.objectViewer" \
@@ -75,7 +75,7 @@ else
   echo "[✓] Artifact Registry repository '$REPO_NAME' already exists."
 fi
 
-# 4. Configure Runtime Service Account & Vertex AI IAM
+# 4. Configure Runtime Service Account & IAM
 echo "[*] Checking Runtime Service Account '$SA_NAME'..."
 if ! gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT_ID" >/dev/null 2>&1; then
   echo "[*] Creating Service Account '$SA_NAME'..."
@@ -86,11 +86,13 @@ else
   echo "[✓] Service Account '$SA_NAME' exists."
 fi
 
-echo "[*] Ensuring IAM Vertex AI User permission on '$SA_EMAIL'..."
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/aiplatform.user" \
-  --condition=None >/dev/null 2>&1 || true
+echo "[*] Ensuring IAM roles (Vertex AI, BigQuery, Storage) on '$SA_EMAIL'..."
+for ROLE in "roles/aiplatform.user" "roles/bigquery.user" "roles/bigquery.dataViewer" "roles/storage.objectViewer"; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="$ROLE" \
+    --condition=None >/dev/null 2>&1 || true
+done
 
 # 5. Build and Push Container Image via Cloud Build
 echo "[*] Submitting Cloud Build container build..."
@@ -99,8 +101,8 @@ gcloud builds submit "$DIR" \
   --tag="$IMAGE_URI" \
   --project="$PROJECT_ID"
 
-# 6. Deploy to Cloud Run (Public Internet Access)
-echo "[*] Deploying to Cloud Run with public Internet access..."
+# 6. Deploy to Cloud Run
+echo "[*] Deploying to Cloud Run..."
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE_URI" \
   --region="$REGION" \
@@ -112,11 +114,20 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu=2 \
   --min-instances=0 \
   --max-instances=10 \
-  --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},MODEL_NAME=gemini-3.7-flash,GOOGLE_API_USE_CLIENT_CERTIFICATE=false,GOOGLE_API_USE_MTLS_ENDPOINT=never" \
+  --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION},MODEL_NAME=auto,BIGQUERY_DATA_AGENT_ID=agent_98c36166-3d31-471e-8fce-4dc446069ad7,BIGQUERY_DATA_AGENT_LOCATION=US,GOOGLE_API_USE_CLIENT_CERTIFICATE=false,GOOGLE_API_USE_MTLS_ENDPOINT=never" \
   --project="$PROJECT_ID"
+
+# 7. Ensure Invoker permissions for domain user
+echo "[*] Ensuring Invoker IAM role on '$SERVICE_NAME'..."
+gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
+  --region="$REGION" \
+  --member="user:harrylin@gcp.altostrat.com" \
+  --role="roles/run.invoker" \
+  --project="$PROJECT_ID" >/dev/null 2>&1 || true
 
 echo ""
 echo "==================================================================="
 echo " Deployment Complete!"
-echo " Public Service URL: $(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')"
+echo " Service Name:        $SERVICE_NAME"
+echo " Live Cloud Run URL:  $(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')"
 echo "==================================================================="

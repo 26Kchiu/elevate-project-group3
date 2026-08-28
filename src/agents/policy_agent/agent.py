@@ -10,9 +10,17 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
-from google.adk.agents import BaseAgent
-from google.adk.agents.invocation_context import InvocationContext
-from google.adk.events import Event
+try:
+    from google.adk.agents import BaseAgent
+    from google.adk.agents.invocation_context import InvocationContext
+    from google.adk.events import Event
+except ImportError:
+    class BaseAgent:
+        def __init__(self, *args, **kwargs):
+            pass
+    InvocationContext = Any
+    Event = Any
+
 from google.genai import types
 
 from src.agents.policy_agent.prompts import (
@@ -54,6 +62,11 @@ class PolicyAgent(BaseAgent):
             api_endpoint=api_endpoint,
             **kwargs,
         )
+        self.name = name
+        self.project_id = project_id
+        self.location = location
+        self.data_agent_id = data_agent_id
+        self.api_endpoint = api_endpoint
 
     async def process_query(
         self,
@@ -132,11 +145,11 @@ class PolicyAgent(BaseAgent):
         )
 
     async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+        self, ctx: Any
+    ) -> AsyncGenerator[Any, None]:
         """ADK execution entrypoint for adk web / adk run."""
         user_text = ""
-        if ctx.session and ctx.session.events:
+        if hasattr(ctx, "session") and ctx.session and ctx.session.events:
             for ev in reversed(ctx.session.events):
                 if ev.content and ev.content.role == "user" and ev.content.parts:
                     for p in ev.content.parts:
@@ -147,26 +160,20 @@ class PolicyAgent(BaseAgent):
                     break
 
         if not user_text:
-            yield Event(
-                author=self.name,
-                content=types.Content(
-                    role="model",
-                    parts=[types.Part.from_text(text="Please provide a policy question.")],
-                ),
+            yield types.Content(
+                role="model",
+                parts=[types.Part.from_text(text="Please provide a policy question.")],
             )
             return
 
         policy_res = await self.process_query(
             query=user_text,
-            session_id=ctx.session.id if ctx.session else None,
+            session_id=ctx.session.id if hasattr(ctx, "session") and ctx.session else None,
         )
 
-        yield Event(
-            author=self.name,
-            content=types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=policy_res.text)],
-            ),
+        yield types.Content(
+            role="model",
+            parts=[types.Part.from_text(text=policy_res.text)],
         )
 
     def process_policy_query(
@@ -215,4 +222,3 @@ class PolicyAgent(BaseAgent):
 policy_agent = PolicyAgent()
 root_agent = policy_agent
 agent = policy_agent
-
