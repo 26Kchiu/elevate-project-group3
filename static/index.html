@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=2.4">
+  <link rel="stylesheet" href="/static/styles.css?v=2.5">
 </head>
 <body>
   <div class="app-container">
@@ -141,7 +141,7 @@
             <span class="icon">🤖</span> Auto Gemini
           </span>
           <span class="security-chip">
-            <span class="icon">🌐</span> Auto-Detect Language
+            <span class="icon">🌐</span> Auto-Detect Response
           </span>
           <button class="btn btn-secondary btn-sm" onclick="clearChat()">Clear Chat</button>
         </div>
@@ -153,15 +153,17 @@
           <div class="system-bubble">
             ✨ Welcome to the <strong>Elevate Multi-Agent Portal</strong>!<br>
             • <strong>Auto Language Detection</strong>: Type or speak in any language (<strong>English, 繁體中文, 簡體中文, 日本語</strong>, etc.). The Gemini model will automatically detect and respond in your language.<br>
-            • <strong>Voice Input (Speech-To-Text)</strong>: Click the 🎙️ microphone button next to Send to speak your question!
+            • <strong>Voice Input (Speech-To-Text)</strong>: Click the 🎙️ microphone button next to Send to speak your question! Use the 🇹🇼/🇺🇸 toggle pill to switch voice recognition language with 1 click.
           </div>
         </div>
       </div>
 
       <!-- Voice Recording Status Banner -->
       <div class="voice-status-banner" id="voiceBanner" style="display: none;">
-        <span class="recording-pulse"></span>
-        <span id="voiceStatusText">Listening... Please speak into your microphone</span>
+        <div class="voice-status-left">
+          <span class="recording-pulse"></span>
+          <span id="voiceStatusText">Listening... Please speak into your microphone</span>
+        </div>
         <button class="btn-voice-cancel" onclick="stopSpeechRecognition()">Done (完成)</button>
       </div>
 
@@ -174,16 +176,29 @@
             placeholder="Type or click 🎙️ to speak (e.g. 請查詢我的休假餘額 / Check my leave balances)..."
             onkeydown="handleKeyDown(event)"
           ></textarea>
-          <!-- Voice STT Button -->
-          <button
-            type="button"
-            class="btn btn-icon mic-btn"
-            id="micBtn"
-            onclick="toggleSpeechRecognition()"
-            title="Voice Input (Auto-Detect Speech)"
-          >
-            <span id="micIcon">🎙️</span>
-          </button>
+
+          <!-- Integrated Voice STT & Language Toggle Group -->
+          <div class="voice-control-group">
+            <button
+              type="button"
+              class="btn-voice-lang-pill"
+              id="voiceLangPill"
+              onclick="cycleVoiceLanguage()"
+              title="Click to toggle Voice Recognition Language"
+            >
+              🇹🇼 中文
+            </button>
+            <button
+              type="button"
+              class="btn btn-icon mic-btn"
+              id="micBtn"
+              onclick="toggleSpeechRecognition()"
+              title="Voice Input (Speech-to-Text)"
+            >
+              <span id="micIcon">🎙️</span>
+            </button>
+          </div>
+
           <!-- Send Button -->
           <button type="submit" class="btn btn-primary send-btn" id="sendBtn">
             <span>Send</span>
@@ -200,6 +215,6 @@
     </main>
   </div>
 
-  <script src="/static/app.js?v=2.4"></script>
+  <script src="/static/app.js?v=2.5"></script>
 </body>
 </html>

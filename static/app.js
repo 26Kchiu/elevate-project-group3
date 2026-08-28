@@ -1,6 +1,6 @@
 /**
  * Frontend logic for Elevate Multi-Agent Portal (WorkWeek HCM & ServiceImmediately ITSM).
- * Features: Auto-Model Selection, Model-Level Auto-Language Detection, and Real-Time Speech-to-Text.
+ * Features: Auto-Model Selection, Model Auto-Language Alignment, Real-Time Speech-to-Text with 1-Click Lang Pill.
  */
 
 let currentAgentMode = "auto";
@@ -9,10 +9,34 @@ let recognition = null;
 let isRecording = false;
 let basePromptText = "";
 
+const VOICE_LANGS = [
+  { code: "zh-TW", label: "🇹🇼 中文" },
+  { code: "en-US", label: "🇺🇸 EN" },
+  { code: "zh-CN", label: "🇨🇳 简中" },
+  { code: "ja-JP", label: "🇯🇵 日語" }
+];
+let currentVoiceLangIndex = 0;
+
 document.addEventListener("DOMContentLoaded", () => {
   syncAllServices();
   initSpeechRecognition();
 });
+
+function cycleVoiceLanguage() {
+  currentVoiceLangIndex = (currentVoiceLangIndex + 1) % VOICE_LANGS.length;
+  const currentLang = VOICE_LANGS[currentVoiceLangIndex];
+  const pill = document.getElementById("voiceLangPill");
+  if (pill) {
+    pill.innerText = currentLang.label;
+  }
+  if (recognition) {
+    recognition.lang = currentLang.code;
+  }
+  const statusText = document.getElementById("voiceStatusText");
+  if (statusText && isRecording) {
+    statusText.innerText = `Listening in ${currentLang.label}... Please speak into your microphone`;
+  }
+}
 
 function handleModelChange() {
   const selector = document.getElementById("modelSelector");
@@ -52,7 +76,7 @@ function setAgentMode(mode) {
 }
 
 /**
- * Initialize Speech-To-Text (Web Speech API) with Auto Language Detection
+ * Initialize Speech-To-Text (Web Speech API)
  */
 function initSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -71,8 +95,7 @@ function initSpeechRecognition() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    // Auto-detect browser/system language
-    recognition.lang = navigator.language || (navigator.languages && navigator.languages[0]) || "zh-TW";
+    recognition.lang = VOICE_LANGS[currentVoiceLangIndex].code;
 
     recognition.onstart = () => {
       isRecording = true;
@@ -107,11 +130,16 @@ function initSpeechRecognition() {
     };
 
     recognition.onerror = (event) => {
-      console.error("Speech recognition error:", event.error);
-      if (event.error === "not-allowed") {
-        alert("Microphone access was denied. Please allow microphone permission in your browser address bar.");
+      console.warn("Speech recognition event:", event.error);
+      const statusText = document.getElementById("voiceStatusText");
+      if (event.error === "no-speech") {
+        if (statusText) statusText.innerText = "No voice heard yet. Please speak clearly into your microphone...";
+      } else if (event.error === "not-allowed") {
+        alert("Microphone permission was denied. Please allow microphone access in your browser address bar.");
+        stopSpeechRecognition();
+      } else {
+        stopSpeechRecognition();
       }
-      stopSpeechRecognition();
     };
 
     recognition.onend = () => {
@@ -132,7 +160,7 @@ function toggleSpeechRecognition() {
     stopSpeechRecognition();
   } else {
     try {
-      recognition.lang = navigator.language || (navigator.languages && navigator.languages[0]) || "zh-TW";
+      recognition.lang = VOICE_LANGS[currentVoiceLangIndex].code;
       recognition.start();
     } catch (err) {
       console.error("Error starting speech recognition:", err);
@@ -155,12 +183,13 @@ function updateVoiceUI(recording) {
   const micIcon = document.getElementById("micIcon");
   const banner = document.getElementById("voiceBanner");
   const statusText = document.getElementById("voiceStatusText");
+  const currentLang = VOICE_LANGS[currentVoiceLangIndex];
 
   if (recording) {
     if (micBtn) micBtn.classList.add("recording");
     if (micIcon) micIcon.innerText = "⏹️";
     if (statusText) {
-      statusText.innerText = "Listening... Speak your question in any language (語音輸入中)";
+      statusText.innerText = `Listening in ${currentLang.label}... Speak your question (點擊 ⏹️ 完成)`;
     }
     if (banner) banner.style.display = "flex";
   } else {
